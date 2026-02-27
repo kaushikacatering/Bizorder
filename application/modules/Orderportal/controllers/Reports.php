@@ -690,4 +690,365 @@ class Reports extends MY_Controller {
         fclose($output);
         exit;
     }
-}
+    
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // PATIENT AUDIT TRAIL REPORT - Tracks Onboarding, Discharge, and Room Transfers
+    // ═══════════════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Patient Audit Trail Report Page
+     * Shows detailed tracking of:
+     * - Patient onboarding (date + EXACT TIME recorded)
+     * - Patient discharges (date + EXACT TIME recorded)  
+     * - Room transfers (date + EXACT TIME + from/to rooms)
+     */
+    public function patientAuditTrail() {
+        $this->load->helper('custom');
+        
+        $data = [];
+        $data['page_title'] = 'Patient Audit Trail';
+        $data['pagefor'] = 'reports';
+        
+        // Get date filters from POST or default to last 30 days
+        $from_date = $this->input->post('from_date');
+        $to_date = $this->input->post('to_date');
+        $event_type = $this->input->post('event_type'); // onboarding, discharge, transfer, or all
+        
+        if (empty($from_date)) {
+            $from_date = date('Y-m-d', strtotime('-30 days'));
+        }
+        if (empty($to_date)) {
+            $to_date = date('Y-m-d');
+        }
+        if (empty($event_type)) {
+            $event_type = 'all';
+        }
+        
+        $data['from_date'] = $from_date;
+        $data['to_date'] = $to_date;
+        $data['selected_event_type'] = $event_type;
+        
+        // Try to load from audit_log table first, fallback to people table
+        $data['audit_events'] = $this->getPatientAuditEvents($from_date, $to_date, $event_type);
+        
+        // Get summary statistics
+        $data['summary'] = $this->getAuditSummary($from_date, $to_date);
+        
+        $this->load->view('general/header', $data);
+        $this->load->view('Orderportal/Reports/patient_audit_trail', $data);
+        $this->load->view('general/footer', $data);
+    }
+    
+    /**
+     * Get patient audit events from audit_log table (or fallback to people table)
+     */
+    private function getPatientAuditEvents($from_date, $to_date, $event_type = 'all') {
+        $events = [];
+        
+        // Check if patient_audit_log table exists
+        $auditTableExists = $this->tenantDb->table_exists('patient_audit_log');
+        
+        if ($auditTableExists) {
+            // Use the new audit trail table
+            $this->tenantDb->select('
+                pal.*,
+                u.username as created_by_name
+            ');
+            $this->tenantDb->from('patient_audit_log pal');
+            $this->tenantDb->join('users u', 'u.id = pal.created_by', 'left');
+            $this->tenantDb->where('DATE(pal.event_datetime) >=', $from_date);
+            $this->tenantDb->where('DATE(pal.event_datetime) <=', $to_date);
+            
+            if ($event_type != 'all') {
+                $this->tenantDb->where('pal.event_type', $event_type);
+            }
+            
+            $this->tenantDb->order_by('pal.event_datetime', 'DESC');
+            $results = $this->tenantDb->get()->result_array();
+            
+            foreach ($results as $row) {
+                $events[] = [
+                    'id' => $row['id'],
+                    'patient_id' => $row['patient_id'],
+                    'patient_name' => $row['patient_name'],
+                    'event_type' => $row['event_type'],
+                    'event_date' => date('Y-m-d', strtotime($row['event_datetime'])),
+                    'event_time' => date('H:i:s', strtotime($row['event_datetime'])),
+                    'event_datetime' => $row['event_datetime'],
+                    'suite_name' => $row['suite_name'],
+                    'floor_name' => $row['floor_name'],
+                    'old_suite_name' => $row['old_suite_name'],
+                    'new_suite_name' => $row['new_suite_name'],
+                    'meals_cancelled' => $row['meals_cancelled'],
+                    'orders_transferred' => $row['orders_transferred'],
+                    'notes' => $row['notes'],
+                    'created_by' => $row['created_by_name'] ?: 'System'
+                ];
+            }
+        } else {
+            // Fallback: Build events from people table with time columns
+            $events = $this->buildEventsFromPeopleTable($from_date, $to_date, $event_type);
+        }
+        
+        return $events;
+    }
+    
+    /**
+     * Fallback: Build audit events from people table (if audit_log doesn't exist)
+     */
+    private function buildEventsFromPeopleTable($from_date, $to_date, $event_type) {
+        $events = [];
+        
+        // Get onboarding events
+        if ($event_type == 'all' || $event_type == 'onboarding') {
+            $this->tenantDb->select('
+                p.id as patient_id,
+                p.name as patient_name,
+                p.suite_number,
+                p.floor_number,
+                p.date_onboarded,
+                p.time_onboarded,
+                p.date_added,
+                s.bed_no as suite_name,
+                f.name as floor_name
+            ');
+            $this->tenantDb->from('people p');
+            $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
+            $this->tenantDb->join('foodmenuconfig f', 'f.id = p.floor_number AND f.listtype = "floor"', 'left');
+            $this->tenantDb->where('p.date_onboarded >=', $from_date);
+            $this->tenantDb->where('p.date_onboarded <=', $to_date);
+            $this->tenantDb->order_by('p.date_onboarded', 'DESC');
+            
+            $onboarding_results = $this->tenantDb->get()->result_array();
+            
+            foreach ($onboarding_results as $row) {
+                $event_datetime = $row['time_onboarded'] 
+                    ? $row['time_onboarded'] 
+                    : ($row['date_added'] ?: $row['date_onboarded'] . ' 00:00:00');
+                
+                $events[] = [
+                    'id' => 'onboard_' . $row['patient_id'],
+                    'patient_id' => $row['patient_id'],
+                    'patient_name' => $row['patient_name'],
+                    'event_type' => 'onboarding',
+                    'event_date' => $row['date_onboarded'],
+                    'event_time' => date('H:i:s', strtotime($event_datetime)),
+                    'event_datetime' => $event_datetime,
+                    'suite_name' => $row['suite_name'] ?: 'Suite ' . $row['suite_number'],
+                    'floor_name' => $row['floor_name'] ?: 'Floor ' . $row['floor_number'],
+                    'old_suite_name' => null,
+                    'new_suite_name' => null,
+                    'meals_cancelled' => 0,
+                    'orders_transferred' => 0,
+                    'notes' => 'Patient onboarded',
+                    'created_by' => 'System (legacy data)'
+                ];
+            }
+        }
+        
+        // Get discharge events
+        if ($event_type == 'all' || $event_type == 'discharge') {
+            $this->tenantDb->select('
+                p.id as patient_id,
+                p.name as patient_name,
+                p.suite_number,
+                p.floor_number,
+                p.date_of_discharge,
+                p.time_discharged,
+                p.date_modified,
+                s.bed_no as suite_name,
+                f.name as floor_name
+            ');
+            $this->tenantDb->from('people p');
+            $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
+            $this->tenantDb->join('foodmenuconfig f', 'f.id = p.floor_number AND f.listtype = "floor"', 'left');
+            $this->tenantDb->where('p.date_of_discharge >=', $from_date);
+            $this->tenantDb->where('p.date_of_discharge <=', $to_date);
+            $this->tenantDb->where('p.status', 2); // Discharged status
+            $this->tenantDb->order_by('p.date_of_discharge', 'DESC');
+            
+            $discharge_results = $this->tenantDb->get()->result_array();
+            
+            foreach ($discharge_results as $row) {
+                $event_datetime = $row['time_discharged'] 
+                    ? $row['time_discharged'] 
+                    : ($row['date_modified'] ?: $row['date_of_discharge'] . ' 00:00:00');
+                
+                $events[] = [
+                    'id' => 'discharge_' . $row['patient_id'],
+                    'patient_id' => $row['patient_id'],
+                    'patient_name' => $row['patient_name'],
+                    'event_type' => 'discharge',
+                    'event_date' => $row['date_of_discharge'],
+                    'event_time' => date('H:i:s', strtotime($event_datetime)),
+                    'event_datetime' => $event_datetime,
+                    'suite_name' => $row['suite_name'] ?: 'Suite ' . $row['suite_number'],
+                    'floor_name' => $row['floor_name'] ?: 'Floor ' . $row['floor_number'],
+                    'old_suite_name' => null,
+                    'new_suite_name' => null,
+                    'meals_cancelled' => 0, // Can't determine from legacy data
+                    'orders_transferred' => 0,
+                    'notes' => 'Patient discharged',
+                    'created_by' => 'System (legacy data)'
+                ];
+            }
+        }
+        
+        // Sort all events by datetime descending
+        usort($events, function($a, $b) {
+            return strtotime($b['event_datetime']) - strtotime($a['event_datetime']);
+        });
+        
+        return $events;
+    }
+    
+    /**
+     * Get audit summary statistics
+     */
+    private function getAuditSummary($from_date, $to_date) {
+        $summary = [
+            'total_onboarding' => 0,
+            'total_discharges' => 0,
+            'total_transfers' => 0,
+            'total_meals_cancelled' => 0,
+            'by_day' => []
+        ];
+        
+        // Check if audit table exists
+        if ($this->tenantDb->table_exists('patient_audit_log')) {
+            // Counts from audit log
+            $this->tenantDb->select('event_type, COUNT(*) as count, SUM(meals_cancelled) as meals_cancelled');
+            $this->tenantDb->from('patient_audit_log');
+            $this->tenantDb->where('DATE(event_datetime) >=', $from_date);
+            $this->tenantDb->where('DATE(event_datetime) <=', $to_date);
+            $this->tenantDb->group_by('event_type');
+            
+            $results = $this->tenantDb->get()->result_array();
+            
+            foreach ($results as $row) {
+                if ($row['event_type'] == 'onboarding') {
+                    $summary['total_onboarding'] = (int) $row['count'];
+                } elseif ($row['event_type'] == 'discharge') {
+                    $summary['total_discharges'] = (int) $row['count'];
+                    $summary['total_meals_cancelled'] = (int) $row['meals_cancelled'];
+                } elseif ($row['event_type'] == 'transfer') {
+                    $summary['total_transfers'] = (int) $row['count'];
+                }
+            }
+            
+            // By day breakdown
+            $this->tenantDb->select('DATE(event_datetime) as event_date, event_type, COUNT(*) as count');
+            $this->tenantDb->from('patient_audit_log');
+            $this->tenantDb->where('DATE(event_datetime) >=', $from_date);
+            $this->tenantDb->where('DATE(event_datetime) <=', $to_date);
+            $this->tenantDb->group_by('DATE(event_datetime), event_type');
+            $this->tenantDb->order_by('event_date', 'ASC');
+            
+            $by_day_results = $this->tenantDb->get()->result_array();
+            
+            foreach ($by_day_results as $row) {
+                $date = $row['event_date'];
+                if (!isset($summary['by_day'][$date])) {
+                    $summary['by_day'][$date] = ['onboarding' => 0, 'discharge' => 0, 'transfer' => 0];
+                }
+                $summary['by_day'][$date][$row['event_type']] = (int) $row['count'];
+            }
+        } else {
+            // Fallback counts from people table
+            // Onboarding count
+            $this->tenantDb->where('date_onboarded >=', $from_date);
+            $this->tenantDb->where('date_onboarded <=', $to_date);
+            $summary['total_onboarding'] = $this->tenantDb->count_all_results('people');
+            
+            // Discharge count
+            $this->tenantDb->where('date_of_discharge >=', $from_date);
+            $this->tenantDb->where('date_of_discharge <=', $to_date);
+            $this->tenantDb->where('status', 2);
+            $summary['total_discharges'] = $this->tenantDb->count_all_results('people');
+        }
+        
+        return $summary;
+    }
+    
+    /**
+     * Export patient audit trail to CSV
+     */
+    public function exportPatientAuditTrail() {
+        $this->load->helper('custom');
+        
+        $from_date = $this->input->post('from_date') ?: date('Y-m-d', strtotime('-30 days'));
+        $to_date = $this->input->post('to_date') ?: date('Y-m-d');
+        $event_type = $this->input->post('event_type') ?: 'all';
+        
+        $events = $this->getPatientAuditEvents($from_date, $to_date, $event_type);
+        
+        // Set headers for CSV download
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="patient_audit_trail_' . date('Y-m-d_H-i-s') . '.csv"');
+        
+        $output = fopen('php://output', 'w');
+        
+        // Title
+        fputcsv($output, ['Patient Audit Trail Report']);
+        fputcsv($output, ['Date Range: ' . date('d M Y', strtotime($from_date)) . ' to ' . date('d M Y', strtotime($to_date))]);
+        fputcsv($output, ['Event Type Filter: ' . ucfirst($event_type)]);
+        fputcsv($output, ['Generated: ' . date('d M Y H:i:s')]);
+        fputcsv($output, []);
+        
+        // Headers
+        fputcsv($output, [
+            'Event Date',
+            'Event Time',
+            'Event Type',
+            'Patient Name',
+            'Suite/Room',
+            'Floor',
+            'Old Room (Transfers)',
+            'New Room (Transfers)',
+            'Meals Cancelled',
+            'Orders Transferred',
+            'Notes',
+            'Recorded By'
+        ]);
+        
+        // Data
+        foreach ($events as $event) {
+            fputcsv($output, [
+                date('d M Y', strtotime($event['event_date'])),
+                $event['event_time'],
+                ucfirst($event['event_type']),
+                $event['patient_name'],
+                $event['suite_name'],
+                $event['floor_name'],
+                $event['old_suite_name'] ?: 'N/A',
+                $event['new_suite_name'] ?: 'N/A',
+                $event['meals_cancelled'],
+                $event['orders_transferred'],
+                $event['notes'],
+                $event['created_by']
+            ]);
+        }
+        
+        fclose($output);
+        exit;
+    }
+    
+    /**
+     * Print-friendly version of audit trail
+     */
+    public function printPatientAuditTrail() {
+        $this->load->helper('custom');
+        
+        $from_date = $this->input->get('from_date') ?: date('Y-m-d', strtotime('-30 days'));
+        $to_date = $this->input->get('to_date') ?: date('Y-m-d');
+        $event_type = $this->input->get('event_type') ?: 'all';
+        
+        $data['from_date'] = $from_date;
+        $data['to_date'] = $to_date;
+        $data['selected_event_type'] = $event_type;
+        $data['audit_events'] = $this->getPatientAuditEvents($from_date, $to_date, $event_type);
+        $data['summary'] = $this->getAuditSummary($from_date, $to_date);
+        $data['page_title'] = 'Patient Audit Trail - Print';
+        
+        $this->load->view('Orderportal/Reports/patient_audit_trail_print', $data);
+    }

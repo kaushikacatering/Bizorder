@@ -1443,15 +1443,43 @@ public function transferClient() {
             return;
         }
         
+        // ═══════════════════════════════════════════════════════════════════
+        // TRANSFER ORDERS: Move all future/active orders from old suite to new suite
+        // This ensures the patient's meal orders follow them to their new room
+        // ═══════════════════════════════════════════════════════════════════
+        $ordersTransferred = $this->transferSuiteOrders($source_suite_id, $destination_suite_id, $active_client['name'] ?? 'Unknown');
+        
         // Log the transfer
-        log_message('info', "Client transferred: Suite {$source_suite['bed_no']} to Suite {$destination_suite['bed_no']} for client ID {$active_client['id']}");
+        log_message('info', "Client transferred: Suite {$source_suite['bed_no']} to Suite {$destination_suite['bed_no']} for client ID {$active_client['id']}. Orders transferred: {$ordersTransferred}");
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // LOG TO AUDIT TRAIL: Room Transfer via drag-drop
+        // ═══════════════════════════════════════════════════════════════════
+        $this->logTransferToAuditTrailFromConfig(
+            $active_client['id'],
+            $active_client['name'] ?? 'Unknown',
+            $source_suite_id,
+            $source_suite,
+            $destination_suite_id,
+            $destination_suite,
+            $ordersTransferred
+        );
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // NOTIFY KITCHEN: Room transfer occurred
+        // ═══════════════════════════════════════════════════════════════════
+        $this->load->helper('notification');
+        $this->load->helper('custom');
+        $notification_msg = "🔄 Room Transfer: Patient '{$active_client['name']}' moved from {$source_suite['bed_no']} to {$destination_suite['bed_no']} at " . australia_datetime() . ". {$ordersTransferred} meal order(s) updated.";
+        createNotification($this->tenantDb, 1, $this->selected_location_id, 'notice', $notification_msg);
         
         echo json_encode([
             'status' => 'success',
-            'message' => "Client successfully transferred from Suite {$source_suite['bed_no']} to Suite {$destination_suite['bed_no']}",
+            'message' => "Client successfully transferred from Suite {$source_suite['bed_no']} to Suite {$destination_suite['bed_no']}" . ($ordersTransferred > 0 ? ". {$ordersTransferred} order(s) transferred." : ""),
             'client_name' => isset($active_client['first_name']) ? $active_client['first_name'] . ' ' . $active_client['last_name'] : 'Unknown Client',
             'source_suite' => $source_suite['bed_no'],
-            'destination_suite' => $destination_suite['bed_no']
+            'destination_suite' => $destination_suite['bed_no'],
+            'orders_transferred' => $ordersTransferred
         ]);
         
     } catch (Exception $e) {
@@ -1461,6 +1489,171 @@ public function transferClient() {
             'status' => 'error',
             'message' => 'Transfer failed: ' . $e->getMessage()
         ]);
+    }
+}
+
+/**
+ * Transfer all future/active orders from one suite to another
+ * This is called when a patient is moved between suites to ensure their orders follow them
+ * 
+ * @param int $source_suite_id The suite ID the patient is moving FROM
+ * @param int $destination_suite_id The suite ID the patient is moving TO
+ * @param string $patient_name Patient name for logging
+ * @return int Number of orders transferred
+ */
+private function transferSuiteOrders($source_suite_id, $destination_suite_id, $patient_name = 'Unknown') {
+    $this->load->helper('custom');
+    $today = date('Y-m-d');
+    $orders_transferred = 0;
+    
+    // Get source and destination suite names for logging
+    $source_suite = $this->tenantDb->where('id', $source_suite_id)->get('suites')->row_array();
+    $dest_suite = $this->tenantDb->where('id', $destination_suite_id)->get('suites')->row_array();
+    $source_name = $source_suite ? $source_suite['bed_no'] : "Suite {$source_suite_id}";
+    $dest_name = $dest_suite ? $dest_suite['bed_no'] : "Suite {$destination_suite_id}";
+    
+    log_message('info', "ORDER TRANSFER: Starting order transfer from {$source_name} (ID:{$source_suite_id}) to {$dest_name} (ID:{$destination_suite_id}) for patient '{$patient_name}'. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 1: Find all orders for the source suite that are:
+    //         - Today or future dates (date >= today)
+    //         - Not delivered (is_delivered != 1)
+    //         - Not cancelled (status != 0)
+    // ═══════════════════════════════════════════════════════════════════
+    $this->tenantDb->where('bed_id', $source_suite_id);
+    $this->tenantDb->where('date >=', $today);
+    $this->tenantDb->where('status !=', 0); // Not cancelled
+    $this->tenantDb->where('is_delivered !=', 1); // Not delivered
+    $orders_to_transfer = $this->tenantDb->get('orders')->result_array();
+    
+    if (empty($orders_to_transfer)) {
+        log_message('info', "ORDER TRANSFER: No active/future orders found for {$source_name} to transfer.");
+        return 0;
+    }
+    
+    log_message('info', "ORDER TRANSFER: Found " . count($orders_to_transfer) . " order(s) to transfer from {$source_name} to {$dest_name}");
+    
+    foreach ($orders_to_transfer as $order) {
+        $order_id = $order['order_id'];
+        $order_date = $order['date'];
+        
+        try {
+            // ═══════════════════════════════════════════════════════════════════
+            // STEP 2: Update the main order record - change bed_id
+            // ═══════════════════════════════════════════════════════════════════
+            $this->tenantDb->where('order_id', $order_id);
+            $this->tenantDb->update('orders', ['bed_id' => $destination_suite_id]);
+            
+            // ═══════════════════════════════════════════════════════════════════
+            // STEP 3: Update orders_to_patient_options - change bed_id for all items
+            // ═══════════════════════════════════════════════════════════════════
+            $this->tenantDb->where('order_id', $order_id);
+            $this->tenantDb->where('bed_id', $source_suite_id);
+            $this->tenantDb->update('orders_to_patient_options', ['bed_id' => $destination_suite_id]);
+            
+            // ═══════════════════════════════════════════════════════════════════
+            // STEP 4: Update orders_to_comments - change bed_id
+            // ═══════════════════════════════════════════════════════════════════
+            $this->tenantDb->where('order_id', $order_id);
+            $this->tenantDb->where('bed_id', $source_suite_id);
+            $this->tenantDb->update('orders_to_comments', ['bed_id' => $destination_suite_id]);
+            
+            // ═══════════════════════════════════════════════════════════════════
+            // STEP 5: Update suite_order_details - change suite_id if table exists
+            // ═══════════════════════════════════════════════════════════════════
+            if ($this->tenantDb->table_exists('suite_order_details')) {
+                $this->tenantDb->where('suite_id', $source_suite_id);
+                // Match by floor_order_id if we have one, otherwise by date range
+                if (!empty($order['floor_order_id'])) {
+                    $this->tenantDb->where('floor_order_id', $order['floor_order_id']);
+                }
+                $this->tenantDb->update('suite_order_details', ['suite_id' => $destination_suite_id]);
+            }
+            
+            // ═══════════════════════════════════════════════════════════════════
+            // STEP 6: Update delivery status tables (if they have records for this suite)
+            // ═══════════════════════════════════════════════════════════════════
+            if ($this->tenantDb->table_exists('orders_to_deliverystatus')) {
+                $this->tenantDb->where('order_id', $order_id);
+                $this->tenantDb->where('bed_id', $source_suite_id);
+                $this->tenantDb->update('orders_to_deliverystatus', ['bed_id' => $destination_suite_id]);
+            }
+            
+            if ($this->tenantDb->table_exists('orders_to_packagestatus')) {
+                $this->tenantDb->where('order_id', $order_id);
+                $this->tenantDb->where('bed_id', $source_suite_id);
+                $this->tenantDb->update('orders_to_packagestatus', ['bed_id' => $destination_suite_id]);
+            }
+            
+            $orders_transferred++;
+            log_message('info', "ORDER TRANSFER: Successfully transferred order ID={$order_id} (date={$order_date}) from {$source_name} to {$dest_name}");
+            
+        } catch (Exception $e) {
+            log_message('error', "ORDER TRANSFER ERROR: Failed to transfer order ID={$order_id}. Error: " . $e->getMessage());
+        }
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 7: Create notification about the transfer
+    // ═══════════════════════════════════════════════════════════════════
+    if ($orders_transferred > 0) {
+        $this->load->helper('notification');
+        $msg = "Suite Transfer: {$orders_transferred} order(s) transferred from {$source_name} to {$dest_name} for patient {$patient_name}";
+        createNotification($this->tenantDb, 1, $this->selected_location_id, 'info', $msg);
+    }
+    
+    log_message('info', "ORDER TRANSFER COMPLETE: Transferred {$orders_transferred} order(s) from {$source_name} to {$dest_name} for patient '{$patient_name}'");
+    
+    return $orders_transferred;
+}
+
+/**
+ * Log room transfer to audit trail from Hospitalconfig controller
+ * (Used for drag-drop transfers on the portal page)
+ */
+private function logTransferToAuditTrailFromConfig($patientId, $patientName, $oldSuiteId, $oldSuite, $newSuiteId, $newSuite, $ordersTransferred = 0) {
+    try {
+        // Load the AuditTrail model from Orderportal module
+        $this->load->model('Orderportal/AuditTrail_model', 'AuditTrail_model');
+        $this->load->helper('custom');
+        
+        // Get floor names
+        $old_floor_details = $this->tenantDb->where('id', $oldSuite['floor_id'])
+                                           ->where('listtype', 'floor')
+                                           ->get('foodmenuconfig')
+                                           ->row_array();
+        $old_floor_name = !empty($old_floor_details) ? $old_floor_details['name'] : "Floor {$oldSuite['floor_id']}";
+        
+        $new_floor_details = $this->tenantDb->where('id', $newSuite['floor_id'])
+                                           ->where('listtype', 'floor')
+                                           ->get('foodmenuconfig')
+                                           ->row_array();
+        $new_floor_name = !empty($new_floor_details) ? $new_floor_details['name'] : "Floor {$newSuite['floor_id']}";
+        
+        $notes = "Transferred from {$oldSuite['bed_no']} to {$newSuite['bed_no']} via drag-drop";
+        if ($ordersTransferred > 0) {
+            $notes .= ". {$ordersTransferred} meal order(s) updated to new room.";
+        }
+        
+        $this->AuditTrail_model->logTransfer(
+            $patientId,
+            $patientName,
+            $oldSuiteId,
+            $oldSuite['bed_no'],
+            $oldSuite['floor_id'],
+            $old_floor_name,
+            $newSuiteId,
+            $newSuite['bed_no'],
+            $newSuite['floor_id'],
+            $new_floor_name,
+            $ordersTransferred,
+            $notes
+        );
+        
+        log_message('info', "AUDIT TRAIL: Room transfer logged for patient {$patientName} from {$oldSuite['bed_no']} to {$newSuite['bed_no']}");
+        
+    } catch (Exception $e) {
+        log_message('error', 'Failed to log transfer to audit trail: ' . $e->getMessage());
     }
 }
 

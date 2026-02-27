@@ -310,6 +310,18 @@ class Patient extends MY_Controller
         $old_suite_data['is_vaccant'] = 1; // Mark old suite as vacant
         $this->common_model->commonRecordUpdate('suites','id',$old_suite_number,$old_suite_data);
         log_message('info', "SUITE STATUS UPDATE: Marked old suite {$old_suite_number} as vacant after moving active patient to suite {$suite_number}. Patient Name=" . ($patient_name ?: 'UNKNOWN') . ", Person ID={$person_id}, User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // TRANSFER ORDERS: Move all future/active orders from old suite to new suite
+        // This ensures the patient's meal orders follow them to their new room
+        // ═══════════════════════════════════════════════════════════════════
+        $ordersTransferred = $this->transferSuiteOrders($old_suite_number, $suite_number, $patient_name ?: 'Unknown');
+        if ($ordersTransferred > 0) {
+            log_message('info', "ORDER TRANSFER: Transferred {$ordersTransferred} order(s) during patient edit from suite {$old_suite_number} to {$suite_number}. Patient: {$patient_name}");
+        }
+        
+        // LOG TO AUDIT TRAIL: Room Transfer
+        $this->logTransferToAuditTrail($person_id, $patient_name, $old_suite_number, $suite_number, $ordersTransferred);
     }
 
     // Check if dietary/allergens changed (for update notifications)
@@ -329,10 +341,14 @@ class Patient extends MY_Controller
     
     // Save or update patient record
     if (empty($person_id)) {
-        $save_data['date_added'] = australia_datetime();      
+        $save_data['date_added'] = australia_datetime();
+        $save_data['time_onboarded'] = australia_datetime(); // EXACT TIME of onboarding entry
         $actionid = $this->common_model->commonRecordCreate('people',$save_data);
         
         log_message('info', "PATIENT ONBOARD SUCCESS: Patient ID={$actionid}, Patient Name=" . ($patient_name ?: 'UNKNOWN') . ", Suite Number={$suite_number}, Onboard Date={$onboard_date}, Discharge Date=" . ($discharge_date ?: 'NONE') . ", Status=" . ($should_be_discharged ? 'DISCHARGED' : 'ACTIVE') . ", Suite Status=" . ($should_be_discharged ? 'VACANT' : 'OCCUPIED') . ", User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . ", Timestamp=" . australia_datetime());
+        
+        // LOG TO AUDIT TRAIL: Patient Onboarded
+        $this->logOnboardingToAuditTrail($actionid, $save_data, $suite_number, $should_be_discharged);
         
         // SIMPLIFIED NOTIFICATION 1: Suite Added - New patient onboarded
         $patientName = $save_data['name'] ?: 'Unknown Patient';
@@ -404,6 +420,9 @@ class Patient extends MY_Controller
     /**
      * Update patient status (active/discharged)
      * Called via AJAX from patient list discharge toggle
+     * 
+     * UPDATED: Now includes time tracking and audit trail logging
+     * FIXED: Now cancels same-day orders based on discharge time
      */
     public function updateStatus() {
         $this->load->helper('custom'); // Load custom helper for Australia timezone functions
@@ -449,43 +468,362 @@ class Patient extends MY_Controller
             'date_modified' => australia_datetime()
         );
         
-        // If discharging, set actual discharge date if not already set
-        if ($status == 'discharged' && empty($patient['date_of_discharge'])) {
-            $update_data['date_of_discharge'] = australia_date_only();
+        // If discharging, set actual discharge date AND TIME if not already set
+        if ($status == 'discharged') {
+            if (empty($patient['date_of_discharge'])) {
+                $update_data['date_of_discharge'] = australia_date_only();
+            }
+            // ALWAYS record the exact time of discharge entry
+            $update_data['time_discharged'] = australia_datetime();
         }
         
         $result = $this->common_model->commonRecordUpdate('people', 'id', $patient_id, $update_data);
         
         if ($result) {
+            $cancelled_count = 0;
+            
             // If patient is being discharged, make their suite available
             if ($status == 'discharged' && !empty($patient['suite_number'])) {
+                // IMMEDIATELY mark suite as vacant
                 $suite_update = array('is_vaccant' => 1);
                 $this->common_model->commonRecordUpdate('suites', 'id', $patient['suite_number'], $suite_update);
                 log_message('info', "SUITE STATUS UPDATE: Suite {$patient['suite_number']} marked as VACANT after patient discharge. Patient ID={$patient_id}, Patient Name=" . ($patient['name'] ?: 'UNKNOWN') . ", User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                 
-                // Cancel all future orders for this suite
-                $cancelled_count = $this->cancelFutureOrdersForPatientDischarge(
+                // Cancel all future AND same-day orders for this suite
+                $cancelled_count = $this->cancelOrdersOnDischarge(
                     $patient['suite_number'], 
-                    australia_date_only(), 
-                    $patient['name'] ?: 'Unknown'
+                    $patient['name'] ?: 'Unknown',
+                    $patient_id
                 );
                 
                 if ($cancelled_count > 0) {
-                    log_message('info', "PATIENT DISCHARGE - ORDERS CANCELLED: {$cancelled_count} future order(s) cancelled for suite {$patient['suite_number']} after patient discharge. Patient ID={$patient_id}, User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
+                    log_message('info', "PATIENT DISCHARGE - ORDERS CANCELLED: {$cancelled_count} order item(s) cancelled for suite {$patient['suite_number']} after patient discharge. Patient ID={$patient_id}, User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                 }
+                
+                // Log to audit trail
+                $this->logDischargeToAuditTrail($patient, $cancelled_count);
             }
             
             log_message('info', "PATIENT STATUS UPDATE SUCCESS: Patient ID={$patient_id}, Patient Name=" . ($patient['name'] ?: 'UNKNOWN') . ", Status changed to " . strtoupper($status) . ", User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . ", Timestamp=" . australia_datetime());
             
             echo json_encode([
                 'status' => 'success', 
-                'message' => 'Client status updated successfully',
-                'new_status' => $status
+                'message' => 'Client status updated successfully' . ($cancelled_count > 0 ? ". {$cancelled_count} meal order(s) cancelled." : ''),
+                'new_status' => $status,
+                'orders_cancelled' => $cancelled_count
             ]);
         } else {
             log_message('error', "PATIENT STATUS UPDATE FAILED: Database update failed for Patient ID={$patient_id}, Patient Name=" . ($patient['name'] ?: 'UNKNOWN') . ", User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
             echo json_encode(['status' => 'error', 'message' => 'Failed to update client status']);
         }
+    }
+    
+    /**
+     * Log discharge event to audit trail
+     */
+    private function logDischargeToAuditTrail($patient, $mealsCancelled = 0) {
+        // Try to load and use the audit trail model
+        try {
+            $this->load->model('AuditTrail_model');
+            
+            // Get suite and floor names
+            $suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no'], ['id' => $patient['suite_number']]);
+            $suite_number = !empty($suite_details) ? $suite_details[0]['bed_no'] : "Suite {$patient['suite_number']}";
+            
+            $floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $patient['floor_number'], 'listtype' => 'floor']);
+            $floor_name = !empty($floor_details) ? $floor_details[0]['name'] : "Floor {$patient['floor_number']}";
+            
+            $this->AuditTrail_model->logDischarge(
+                $patient['id'],
+                $patient['name'] ?: 'Unknown',
+                $patient['suite_number'],
+                $suite_number,
+                $patient['floor_number'],
+                $floor_name,
+                $mealsCancelled,
+                'Patient discharged via status update'
+            );
+        } catch (Exception $e) {
+            log_message('error', 'Failed to log discharge to audit trail: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Log onboarding event to audit trail
+     */
+    private function logOnboardingToAuditTrail($patientId, $saveData, $suiteNumber, $isDischargedOnEntry = false) {
+        try {
+            $this->load->model('AuditTrail_model');
+            
+            // Get suite and floor names
+            $suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no'], ['id' => $suiteNumber]);
+            $suite_name = !empty($suite_details) ? $suite_details[0]['bed_no'] : "Suite {$suiteNumber}";
+            
+            $floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $saveData['floor_number'], 'listtype' => 'floor']);
+            $floor_name = !empty($floor_details) ? $floor_details[0]['name'] : "Floor {$saveData['floor_number']}";
+            
+            $notes = $isDischargedOnEntry ? 'Patient onboarded with past discharge date - immediately set to discharged' : 'New patient onboarded';
+            
+            $this->AuditTrail_model->logOnboarding(
+                $patientId,
+                $saveData['name'] ?: 'Unknown',
+                $suiteNumber,
+                $suite_name,
+                $saveData['floor_number'],
+                $floor_name,
+                $notes
+            );
+        } catch (Exception $e) {
+            log_message('error', 'Failed to log onboarding to audit trail: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Log room transfer event to audit trail
+     */
+    private function logTransferToAuditTrail($patientId, $patientName, $oldSuiteId, $newSuiteId, $ordersTransferred = 0) {
+        try {
+            $this->load->model('AuditTrail_model');
+            
+            // Get old suite details
+            $old_suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no', 'floor_id'], ['id' => $oldSuiteId]);
+            $old_suite_name = !empty($old_suite_details) ? $old_suite_details[0]['bed_no'] : "Suite {$oldSuiteId}";
+            $old_floor_id = !empty($old_suite_details) ? $old_suite_details[0]['floor_id'] : null;
+            
+            $old_floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $old_floor_id, 'listtype' => 'floor']);
+            $old_floor_name = !empty($old_floor_details) ? $old_floor_details[0]['name'] : "Floor {$old_floor_id}";
+            
+            // Get new suite details
+            $new_suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no', 'floor_id'], ['id' => $newSuiteId]);
+            $new_suite_name = !empty($new_suite_details) ? $new_suite_details[0]['bed_no'] : "Suite {$newSuiteId}";
+            $new_floor_id = !empty($new_suite_details) ? $new_suite_details[0]['floor_id'] : null;
+            
+            $new_floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $new_floor_id, 'listtype' => 'floor']);
+            $new_floor_name = !empty($new_floor_details) ? $new_floor_details[0]['name'] : "Floor {$new_floor_id}";
+            
+            $notes = "Transferred from {$old_suite_name} to {$new_suite_name}";
+            if ($ordersTransferred > 0) {
+                $notes .= ". {$ordersTransferred} meal order(s) updated to new room.";
+            }
+            
+            $this->AuditTrail_model->logTransfer(
+                $patientId,
+                $patientName ?: 'Unknown',
+                $oldSuiteId,
+                $old_suite_name,
+                $old_floor_id,
+                $old_floor_name,
+                $newSuiteId,
+                $new_suite_name,
+                $new_floor_id,
+                $new_floor_name,
+                $ordersTransferred,
+                $notes
+            );
+            
+            // Also send notification to kitchen about the room transfer
+            $this->load->helper('notification');
+            $msg = "🔄 Room Transfer: Patient '{$patientName}' moved from {$old_suite_name} to {$new_suite_name}. {$ordersTransferred} meal order(s) updated.";
+            createNotification($this->tenantDb, 1, $this->selected_location_id, 'notice', $msg);
+            
+        } catch (Exception $e) {
+            log_message('error', 'Failed to log transfer to audit trail: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Cancel orders when patient is discharged
+     * Handles BOTH same-day orders (based on time) AND future orders
+     * 
+     * SAME-DAY RULES:
+     * - Before 11am: Cancel LUNCH + DINNER for today
+     * - Before 2pm (after 11am): Cancel DINNER only for today
+     * - After 2pm: No same-day cancellation (meals already served)
+     * 
+     * FUTURE ORDERS: All meals cancelled
+     * 
+     * @param int $suite_id The suite/bed ID
+     * @param string $patient_name Patient name for notification
+     * @param int $patient_id Patient ID for reference
+     * @return int Number of order items cancelled
+     */
+    private function cancelOrdersOnDischarge($suite_id, $patient_name, $patient_id) {
+        $this->load->helper('notification');
+        $this->load->helper('custom');
+        
+        $cancelled_count = 0;
+        $today = australia_date_only();
+        
+        // Get suite details for notification
+        $suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no'], ['id' => $suite_id]);
+        $suite_name = !empty($suite_details) ? $suite_details[0]['bed_no'] : "Suite $suite_id";
+        
+        // Get current Australia/Sydney time for same-day cancellation rules
+        $australiaTime = new DateTime('now', new DateTimeZone('Australia/Sydney'));
+        $currentHour = (int) $australiaTime->format('H');
+        $currentMinute = (int) $australiaTime->format('i');
+        
+        // Category IDs from foodmenuconfig table
+        $BREAKFAST_CATEGORY_ID = 3;
+        $LUNCH_CATEGORY_ID = 5;
+        $DINNER_CATEGORY_ID = 7;
+        
+        // Determine which categories to cancel for TODAY based on discharge time
+        $categoriesToCancelToday = [];
+        $sameDayCancelReason = '';
+        
+        if ($currentHour < 11) {
+            // Before 11am - cancel LUNCH + DINNER for today
+            $categoriesToCancelToday = [$LUNCH_CATEGORY_ID, $DINNER_CATEGORY_ID];
+            $sameDayCancelReason = 'discharged_before_11am';
+            log_message('info', "DISCHARGE TIME CHECK: Before 11am ($currentHour:$currentMinute) - Will cancel LUNCH + DINNER for today");
+        } elseif ($currentHour < 14) {
+            // Before 2pm (but after 11am) - cancel DINNER only for today
+            $categoriesToCancelToday = [$DINNER_CATEGORY_ID];
+            $sameDayCancelReason = 'discharged_before_2pm';
+            log_message('info', "DISCHARGE TIME CHECK: Before 2pm ($currentHour:$currentMinute) - Will cancel DINNER only for today");
+        } else {
+            // 2pm or later - no same-day cancellation (meals already served)
+            log_message('info', "DISCHARGE TIME CHECK: After 2pm ($currentHour:$currentMinute) - No same-day meal cancellation");
+        }
+        
+        $notification_dates = [];
+        $cancelled_meals = [];
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // STEP 1: CANCEL SAME-DAY ORDERS (Based on time rules)
+        // ═══════════════════════════════════════════════════════════════════
+        if (!empty($categoriesToCancelToday)) {
+            $todayCancelledCount = $this->softCancelOrderItemsForSuite(
+                $suite_id, 
+                $today, 
+                $categoriesToCancelToday, 
+                $patient_name, 
+                $suite_name, 
+                $sameDayCancelReason
+            );
+            
+            if ($todayCancelledCount > 0) {
+                $cancelled_count += $todayCancelledCount;
+                $notification_dates[] = date('d-m-Y', strtotime($today));
+                
+                // Build meal names for notification
+                foreach ($categoriesToCancelToday as $catId) {
+                    if ($catId == $LUNCH_CATEGORY_ID) $cancelled_meals[] = 'Lunch';
+                    if ($catId == $DINNER_CATEGORY_ID) $cancelled_meals[] = 'Dinner';
+                }
+                
+                log_message('info', "DISCHARGE SAME-DAY CANCEL: Cancelled $todayCancelledCount item(s) for suite $suite_name today (". implode(' & ', $cancelled_meals) .")");
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // STEP 2: CANCEL ALL FUTURE ORDERS (date > today)
+        // ═══════════════════════════════════════════════════════════════════
+        $this->tenantDb->select('DISTINCT o.order_id, o.date');
+        $this->tenantDb->from('orders o');
+        $this->tenantDb->join('orders_to_patient_options opo', 'opo.order_id = o.order_id', 'inner');
+        $this->tenantDb->where('o.date >', $today);
+        $this->tenantDb->where('o.status !=', 0);
+        $this->tenantDb->where('opo.bed_id', $suite_id);
+        $this->tenantDb->where('opo.is_cancelled', 0);
+        
+        $future_orders = $this->tenantDb->get()->result_array();
+        
+        if (!empty($future_orders)) {
+            foreach ($future_orders as $order) {
+                $order_id = $order['order_id'];
+                $order_date = $order['date'];
+                
+                // Soft cancel ALL categories for future orders
+                $futureCancelledCount = $this->softCancelOrderItemsForSuite(
+                    $suite_id, 
+                    $order_date, 
+                    null, // null = all categories
+                    $patient_name, 
+                    $suite_name, 
+                    'patient_discharged',
+                    $order_id
+                );
+                
+                if ($futureCancelledCount > 0) {
+                    $cancelled_count += $futureCancelledCount;
+                    $notification_dates[] = date('d-m-Y', strtotime($order_date));
+                    
+                    log_message('info', "DISCHARGE FUTURE CANCEL: Soft-cancelled $futureCancelledCount item(s) for suite $suite_name, order $order_id (date: $order_date)");
+                }
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // STEP 3: SEND NOTIFICATION TO CHEF
+        // ═══════════════════════════════════════════════════════════════════
+        if ($cancelled_count > 0 && function_exists('createNotification')) {
+            $unique_dates = array_unique($notification_dates);
+            $dates_str = implode(', ', $unique_dates);
+            
+            $meal_info = !empty($cancelled_meals) ? " Today's ". implode(' & ', $cancelled_meals) ." cancelled." : "";
+            
+            $notification_msg = "🚨 Patient Discharged - Orders Cancelled: Patient '{$patient_name}' in {$suite_name} was discharged at " . $australiaTime->format('h:i A') . ".{$meal_info} Total {$cancelled_count} order item(s) for date(s): {$dates_str} have been automatically cancelled.";
+            
+            createNotification($this->tenantDb, 1, $this->selected_location_id, 'alert', $notification_msg);
+            
+            log_message('info', "NOTIFICATION SENT: Chef notified about $cancelled_count cancelled items for suite $suite_name due to patient discharge");
+        }
+        
+        return $cancelled_count;
+    }
+    
+    /**
+     * Soft cancel order items for a suite (sets is_cancelled = 1)
+     * Used by cancelOrdersOnDischarge
+     */
+    private function softCancelOrderItemsForSuite($suite_id, $order_date, $category_ids, $patient_name, $suite_name, $cancel_reason, $order_id = null) {
+        // Build the query to find items to cancel
+        $this->tenantDb->select('opo.id, opo.order_id');
+        $this->tenantDb->from('orders_to_patient_options opo');
+        $this->tenantDb->join('orders o', 'o.order_id = opo.order_id', 'inner');
+        $this->tenantDb->where('opo.bed_id', $suite_id);
+        $this->tenantDb->where('opo.is_cancelled', 0);
+        
+        if ($order_id !== null) {
+            $this->tenantDb->where('opo.order_id', $order_id);
+        } else {
+            $this->tenantDb->where('o.date', $order_date);
+        }
+        
+        if ($category_ids !== null && !empty($category_ids)) {
+            $this->tenantDb->where_in('opo.category_id', $category_ids);
+        }
+        
+        $items_query = $this->tenantDb->get();
+        $items_to_cancel = $items_query->result_array();
+        
+        if (empty($items_to_cancel)) {
+            return 0;
+        }
+        
+        // Get item IDs
+        $item_ids = array_column($items_to_cancel, 'id');
+        
+        // Soft delete - update with cancellation info
+        $cancel_data = array(
+            'is_cancelled' => 1,
+            'cancel_reason' => $cancel_reason,
+            'cancelled_at' => australia_datetime(),
+            'cancelled_by' => $this->session->userdata('user_id'),
+            'patient_name_snapshot' => $patient_name,
+            'suite_name_snapshot' => $suite_name
+        );
+        
+        $this->tenantDb->where_in('id', $item_ids);
+        $this->tenantDb->update('orders_to_patient_options', $cancel_data);
+        
+        $affected = $this->tenantDb->affected_rows();
+        
+        log_message('info', "SOFT CANCEL: Updated $affected items (IDs: " . implode(',', $item_ids) . ") with is_cancelled=1, reason=$cancel_reason");
+        
+        return $affected;
     }
     
     /**
@@ -699,6 +1037,106 @@ class Patient extends MY_Controller
         }
         
         return $cancelled_count;
+    }
+
+    /**
+     * Transfer all future/active orders from one suite to another
+     * This is called when a patient is moved between suites to ensure their orders follow them
+     * 
+     * @param int $source_suite_id The suite ID the patient is moving FROM
+     * @param int $destination_suite_id The suite ID the patient is moving TO
+     * @param string $patient_name Patient name for logging
+     * @return int Number of orders transferred
+     */
+    private function transferSuiteOrders($source_suite_id, $destination_suite_id, $patient_name = 'Unknown') {
+        $this->load->helper('custom');
+        $today = date('Y-m-d');
+        $orders_transferred = 0;
+        
+        // Get source and destination suite names for logging
+        $source_suite = $this->tenantDb->where('id', $source_suite_id)->get('suites')->row_array();
+        $dest_suite = $this->tenantDb->where('id', $destination_suite_id)->get('suites')->row_array();
+        $source_name = $source_suite ? $source_suite['bed_no'] : "Suite {$source_suite_id}";
+        $dest_name = $dest_suite ? $dest_suite['bed_no'] : "Suite {$destination_suite_id}";
+        
+        log_message('info', "ORDER TRANSFER (Patient Edit): Starting order transfer from {$source_name} (ID:{$source_suite_id}) to {$dest_name} (ID:{$destination_suite_id}) for patient '{$patient_name}'. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
+        
+        // Find all orders for the source suite that are:
+        // - Today or future dates (date >= today)
+        // - Not delivered (is_delivered != 1)
+        // - Not cancelled (status != 0)
+        $this->tenantDb->where('bed_id', $source_suite_id);
+        $this->tenantDb->where('date >=', $today);
+        $this->tenantDb->where('status !=', 0); // Not cancelled
+        $this->tenantDb->where('is_delivered !=', 1); // Not delivered
+        $orders_to_transfer = $this->tenantDb->get('orders')->result_array();
+        
+        if (empty($orders_to_transfer)) {
+            log_message('info', "ORDER TRANSFER: No active/future orders found for {$source_name} to transfer.");
+            return 0;
+        }
+        
+        log_message('info', "ORDER TRANSFER: Found " . count($orders_to_transfer) . " order(s) to transfer from {$source_name} to {$dest_name}");
+        
+        foreach ($orders_to_transfer as $order) {
+            $order_id = $order['order_id'];
+            $order_date = $order['date'];
+            
+            try {
+                // Update the main order record - change bed_id
+                $this->tenantDb->where('order_id', $order_id);
+                $this->tenantDb->update('orders', ['bed_id' => $destination_suite_id]);
+                
+                // Update orders_to_patient_options - change bed_id for all items
+                $this->tenantDb->where('order_id', $order_id);
+                $this->tenantDb->where('bed_id', $source_suite_id);
+                $this->tenantDb->update('orders_to_patient_options', ['bed_id' => $destination_suite_id]);
+                
+                // Update orders_to_comments - change bed_id
+                $this->tenantDb->where('order_id', $order_id);
+                $this->tenantDb->where('bed_id', $source_suite_id);
+                $this->tenantDb->update('orders_to_comments', ['bed_id' => $destination_suite_id]);
+                
+                // Update suite_order_details - change suite_id if table exists
+                if ($this->tenantDb->table_exists('suite_order_details')) {
+                    $this->tenantDb->where('suite_id', $source_suite_id);
+                    if (!empty($order['floor_order_id'])) {
+                        $this->tenantDb->where('floor_order_id', $order['floor_order_id']);
+                    }
+                    $this->tenantDb->update('suite_order_details', ['suite_id' => $destination_suite_id]);
+                }
+                
+                // Update delivery status tables
+                if ($this->tenantDb->table_exists('orders_to_deliverystatus')) {
+                    $this->tenantDb->where('order_id', $order_id);
+                    $this->tenantDb->where('bed_id', $source_suite_id);
+                    $this->tenantDb->update('orders_to_deliverystatus', ['bed_id' => $destination_suite_id]);
+                }
+                
+                if ($this->tenantDb->table_exists('orders_to_packagestatus')) {
+                    $this->tenantDb->where('order_id', $order_id);
+                    $this->tenantDb->where('bed_id', $source_suite_id);
+                    $this->tenantDb->update('orders_to_packagestatus', ['bed_id' => $destination_suite_id]);
+                }
+                
+                $orders_transferred++;
+                log_message('info', "ORDER TRANSFER: Successfully transferred order ID={$order_id} (date={$order_date}) from {$source_name} to {$dest_name}");
+                
+            } catch (Exception $e) {
+                log_message('error', "ORDER TRANSFER ERROR: Failed to transfer order ID={$order_id}. Error: " . $e->getMessage());
+            }
+        }
+        
+        // Create notification about the transfer
+        if ($orders_transferred > 0) {
+            $this->load->helper('notification');
+            $msg = "Suite Transfer: {$orders_transferred} order(s) transferred from {$source_name} to {$dest_name} for patient {$patient_name}";
+            createNotification($this->tenantDb, 1, $this->selected_location_id, 'info', $msg);
+        }
+        
+        log_message('info', "ORDER TRANSFER COMPLETE: Transferred {$orders_transferred} order(s) from {$source_name} to {$dest_name} for patient '{$patient_name}'");
+        
+        return $orders_transferred;
     }
 
     
