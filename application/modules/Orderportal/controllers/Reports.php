@@ -1052,3 +1052,4 @@ class Reports extends MY_Controller {
         
         $this->load->view('Orderportal/Reports/patient_audit_trail_print', $data);
     }
+}
