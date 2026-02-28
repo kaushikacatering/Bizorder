@@ -114,8 +114,12 @@
                                             <i class="ri-user-line"></i> Patient Report
                                         </button>
                                         <a href="<?php echo base_url('Orderportal/Reports/cancelledOrders'); ?>" 
-                                           class="btn btn-danger">
+                                           class="btn btn-danger me-2">
                                             <i class="ri-delete-bin-line"></i> Cancelled Orders
+                                        </a>
+                                        <a href="<?php echo base_url('Orderportal/Reports/patientAuditTrail'); ?>" 
+                                           class="btn btn-secondary">
+                                            <i class="ri-history-line"></i> Audit Trail
                                         </a>
                                     </div>
                                 </div>

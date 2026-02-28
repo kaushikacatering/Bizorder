@@ -799,19 +799,17 @@ class Reports extends MY_Controller {
     private function buildEventsFromPeopleTable($from_date, $to_date, $event_type) {
         $events = [];
         
+        // Check if time columns exist (migration may not have run yet)
+        $hasTimeColumns = $this->tenantDb->field_exists('time_onboarded', 'people');
+        
         // Get onboarding events
         if ($event_type == 'all' || $event_type == 'onboarding') {
-            $this->tenantDb->select('
-                p.id as patient_id,
-                p.name as patient_name,
-                p.suite_number,
-                p.floor_number,
-                p.date_onboarded,
-                p.time_onboarded,
-                p.date_added,
-                s.bed_no as suite_name,
-                f.name as floor_name
-            ');
+            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_onboarded, p.date_added, s.bed_no as suite_name, f.name as floor_name';
+            if ($hasTimeColumns) {
+                $select_fields .= ', p.time_onboarded';
+            }
+            
+            $this->tenantDb->select($select_fields);
             $this->tenantDb->from('people p');
             $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
             $this->tenantDb->join('foodmenuconfig f', 'f.id = p.floor_number AND f.listtype = "floor"', 'left');
@@ -822,8 +820,9 @@ class Reports extends MY_Controller {
             $onboarding_results = $this->tenantDb->get()->result_array();
             
             foreach ($onboarding_results as $row) {
-                $event_datetime = $row['time_onboarded'] 
-                    ? $row['time_onboarded'] 
+                $time_onboarded = isset($row['time_onboarded']) ? $row['time_onboarded'] : null;
+                $event_datetime = $time_onboarded 
+                    ? $time_onboarded 
                     : ($row['date_added'] ?: $row['date_onboarded'] . ' 00:00:00');
                 
                 $events[] = [
@@ -848,17 +847,12 @@ class Reports extends MY_Controller {
         
         // Get discharge events
         if ($event_type == 'all' || $event_type == 'discharge') {
-            $this->tenantDb->select('
-                p.id as patient_id,
-                p.name as patient_name,
-                p.suite_number,
-                p.floor_number,
-                p.date_of_discharge,
-                p.time_discharged,
-                p.date_modified,
-                s.bed_no as suite_name,
-                f.name as floor_name
-            ');
+            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_of_discharge, p.date_modified, s.bed_no as suite_name, f.name as floor_name';
+            if ($hasTimeColumns) {
+                $select_fields .= ', p.time_discharged';
+            }
+            
+            $this->tenantDb->select($select_fields);
             $this->tenantDb->from('people p');
             $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
             $this->tenantDb->join('foodmenuconfig f', 'f.id = p.floor_number AND f.listtype = "floor"', 'left');
@@ -870,8 +864,9 @@ class Reports extends MY_Controller {
             $discharge_results = $this->tenantDb->get()->result_array();
             
             foreach ($discharge_results as $row) {
-                $event_datetime = $row['time_discharged'] 
-                    ? $row['time_discharged'] 
+                $time_discharged = isset($row['time_discharged']) ? $row['time_discharged'] : null;
+                $event_datetime = $time_discharged 
+                    ? $time_discharged 
                     : ($row['date_modified'] ?: $row['date_of_discharge'] . ' 00:00:00');
                 
                 $events[] = [

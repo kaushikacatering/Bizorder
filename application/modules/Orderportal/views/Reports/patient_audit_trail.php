@@ -215,17 +215,9 @@
                 </div>
             </div>
             
-            <!-- Export/Print Buttons -->
+            <!-- Print Button -->
             <div class="row mb-3 no-print">
                 <div class="col-12">
-                    <form action="<?php echo base_url('Orderportal/Reports/exportPatientAuditTrail'); ?>" method="POST" style="display: inline;">
-                        <input type="hidden" name="from_date" value="<?php echo $from_date; ?>">
-                        <input type="hidden" name="to_date" value="<?php echo $to_date; ?>">
-                        <input type="hidden" name="event_type" value="<?php echo $selected_event_type; ?>">
-                        <button type="submit" class="btn btn-success me-2">
-                            <i class="ri-file-excel-2-line"></i> Export CSV
-                        </button>
-                    </form>
                     <a href="<?php echo base_url('Orderportal/Reports/printPatientAuditTrail?from_date=' . $from_date . '&to_date=' . $to_date . '&event_type=' . $selected_event_type); ?>" 
                        target="_blank" class="btn btn-secondary">
                         <i class="ri-printer-line"></i> Print Report
@@ -361,7 +353,6 @@ $(document).ready(function() {
             pageLength: 25,
             order: [[0, 'desc'], [1, 'desc']], // Sort by date then time descending
             responsive: true,
-            dom: 'Bfrtip',
             language: {
                 search: "Search:",
                 lengthMenu: "Show _MENU_ entries",
