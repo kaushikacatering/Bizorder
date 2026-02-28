@@ -755,7 +755,7 @@ class Reports extends MY_Controller {
                 u.username as created_by_name
             ');
             $this->tenantDb->from('patient_audit_log pal');
-            $this->tenantDb->join('users u', 'u.id = pal.created_by', 'left');
+            $this->tenantDb->join('Global_users u', 'u.id = pal.created_by', 'left');
             $this->tenantDb->where('DATE(pal.event_datetime) >=', $from_date);
             $this->tenantDb->where('DATE(pal.event_datetime) <=', $to_date);
             
