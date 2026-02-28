@@ -256,7 +256,7 @@
                                                 <th>Floor</th>
                                                 <th>Transfer Details</th>
                                                 <th>Meals Affected</th>
-                                                <th>Recorded By</th>
+                                              
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -327,9 +327,7 @@
                                                             <span class="text-muted">-</span>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td>
-                                                        <small><?php echo htmlspecialchars($event['created_by']); ?></small>
-                                                    </td>
+                                                    
                                                 </tr>
                                             <?php endforeach; ?>
                                         </tbody>
