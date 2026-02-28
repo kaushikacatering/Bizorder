@@ -94,7 +94,7 @@
                                     </div>
                                     
                                     <!-- Filter Button -->
-                                    <div class="col-md-3 col-sm-6 mb-3 d-flex align-items-end">
+                                    <div class="col-md-6 col-sm-6 mb-3 d-flex align-items-end">
                                         <button type="submit" class="btn btn-primary me-2">
                                             <i class="ri-filter-3-line"></i> Filter
                                         </button>
