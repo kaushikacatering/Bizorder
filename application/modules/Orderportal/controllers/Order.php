@@ -2494,6 +2494,8 @@ class Order extends MY_Controller
             WHERE o.date = ?
             AND o.buttonType = 'sendorder'
             AND o.status != 0
+            -- ✅ CRITICAL: Exclude cancelled order items (discharged patients)
+            AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
             -- ✅ CRITICAL: Exclude deleted suites
             AND s.is_deleted = 0
             -- ✅ CRITICAL: Exclude vacant suites (only count occupied suites)
@@ -2859,7 +2861,8 @@ class Order extends MY_Controller
                     AND o.buttonType = 'sendorder'
                     AND o.status != 0
                     AND opo.option_id = ?
-                    AND opo.status = 0";
+                    AND opo.status = 0
+                    AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)";
             
             $query = $this->tenantDb->query($sql, [$today, $option_id]);
             $all_orders = $query->result_array();
@@ -2946,12 +2949,20 @@ class Order extends MY_Controller
      * Check if all menu items for an order are complete and update order status accordingly
      */
     function checkAndCompleteOrder($order_id) {
-        // Check if all menu items for this order are complete
-        $incomplete_items = $this->common_model->fetchRecordsDynamically(
-            'orders_to_patient_options', 
-            ['id'], 
-            ['order_id' => $order_id, 'status' => 0]
-        );
+        // Check if all NON-CANCELLED menu items for this order are complete
+        // ✅ CRITICAL FIX: Exclude cancelled items (is_cancelled = 1) from the incomplete check
+        // Without this, cancelled items with status=0 would prevent the order from completing
+        $incomplete_items = $this->tenantDb
+            ->select('id')
+            ->from('orders_to_patient_options')
+            ->where('order_id', $order_id)
+            ->where('status', 0)
+            ->group_start()
+                ->where('is_cancelled', 0)
+                ->or_where('is_cancelled IS NULL')
+            ->group_end()
+            ->get()
+            ->result_array();
         
         if (empty($incomplete_items)) {
             // All items complete - mark order as ready for delivery
