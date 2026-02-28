@@ -749,13 +749,20 @@ class Reports extends MY_Controller {
         $auditTableExists = $this->tenantDb->table_exists('patient_audit_log');
         
         if ($auditTableExists) {
-            // Use the new audit trail table
+            // Use the new audit trail table with fallback joins to people/suites for missing data
             $this->tenantDb->select('
                 pal.*,
-                u.username as created_by_name
+                u.username as user_username,
+                p.suite_number as current_suite_id,
+                p.floor_number as current_floor_id,
+                s.bed_no as current_suite_name,
+                f.name as current_floor_name
             ');
             $this->tenantDb->from('patient_audit_log pal');
             $this->tenantDb->join('Global_users u', 'u.id = pal.created_by', 'left');
+            $this->tenantDb->join('people p', 'p.id = pal.patient_id', 'left');
+            $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
+            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor_id AND f.listtype = "floor"', 'left');
             $this->tenantDb->where('DATE(pal.event_datetime) >=', $from_date);
             $this->tenantDb->where('DATE(pal.event_datetime) <=', $to_date);
             
@@ -767,6 +774,25 @@ class Reports extends MY_Controller {
             $results = $this->tenantDb->get()->result_array();
             
             foreach ($results as $row) {
+                // Determine suite/floor based on event type, with fallback to people table data
+                $suite_name = '';
+                $floor_name = '';
+                
+                if ($row['event_type'] == 'onboarding') {
+                    $suite_name = $row['new_suite_number'] ?: $row['current_suite_name'] ?: '';
+                    $floor_name = $row['new_floor_name'] ?: $row['current_floor_name'] ?: '';
+                } elseif ($row['event_type'] == 'discharge') {
+                    $suite_name = $row['old_suite_number'] ?: $row['current_suite_name'] ?: '';
+                    $floor_name = $row['old_floor_name'] ?: $row['current_floor_name'] ?: '';
+                } else {
+                    // Transfer or other - use new values, then old, then current
+                    $suite_name = $row['new_suite_number'] ?: $row['old_suite_number'] ?: $row['current_suite_name'] ?: '';
+                    $floor_name = $row['new_floor_name'] ?: $row['old_floor_name'] ?: $row['current_floor_name'] ?: '';
+                }
+                
+                // Use stored created_by_name, fallback to joined username, then 'System'
+                $created_by = $row['created_by_name'] ?: ($row['user_username'] ?: 'System');
+                
                 $events[] = [
                     'id' => $row['id'],
                     'patient_id' => $row['patient_id'],
@@ -775,14 +801,14 @@ class Reports extends MY_Controller {
                     'event_date' => date('Y-m-d', strtotime($row['event_datetime'])),
                     'event_time' => date('H:i:s', strtotime($row['event_datetime'])),
                     'event_datetime' => $row['event_datetime'],
-                    'suite_name' => $row['suite_name'],
-                    'floor_name' => $row['floor_name'],
-                    'old_suite_name' => $row['old_suite_name'],
-                    'new_suite_name' => $row['new_suite_name'],
+                    'suite_name' => $suite_name,
+                    'floor_name' => $floor_name,
+                    'old_suite_name' => $row['old_suite_number'],
+                    'new_suite_name' => $row['new_suite_number'],
                     'meals_cancelled' => $row['meals_cancelled'],
-                    'orders_transferred' => $row['orders_transferred'],
+                    'orders_transferred' => $row['orders_affected'] ?? 0,
                     'notes' => $row['notes'],
-                    'created_by' => $row['created_by_name'] ?: 'System'
+                    'created_by' => $created_by
                 ];
             }
         } else {
@@ -804,7 +830,7 @@ class Reports extends MY_Controller {
         
         // Get onboarding events
         if ($event_type == 'all' || $event_type == 'onboarding') {
-            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_onboarded, p.date_added, s.bed_no as suite_name, f.name as floor_name';
+            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_onboarded, p.date_added, s.bed_no as suite_name, f.name as floor_name, s.floor_id';
             if ($hasTimeColumns) {
                 $select_fields .= ', p.time_onboarded';
             }
@@ -812,7 +838,7 @@ class Reports extends MY_Controller {
             $this->tenantDb->select($select_fields);
             $this->tenantDb->from('people p');
             $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
-            $this->tenantDb->join('foodmenuconfig f', 'f.id = p.floor_number AND f.listtype = "floor"', 'left');
+            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor_id AND f.listtype = "floor"', 'left');
             $this->tenantDb->where('p.date_onboarded >=', $from_date);
             $this->tenantDb->where('p.date_onboarded <=', $to_date);
             $this->tenantDb->order_by('p.date_onboarded', 'DESC');
@@ -833,8 +859,8 @@ class Reports extends MY_Controller {
                     'event_date' => $row['date_onboarded'],
                     'event_time' => date('H:i:s', strtotime($event_datetime)),
                     'event_datetime' => $event_datetime,
-                    'suite_name' => $row['suite_name'] ?: 'Suite ' . $row['suite_number'],
-                    'floor_name' => $row['floor_name'] ?: 'Floor ' . $row['floor_number'],
+                    'suite_name' => $row['suite_name'] ?: ($row['suite_number'] ? 'Suite ID: ' . $row['suite_number'] : 'N/A'),
+                    'floor_name' => $row['floor_name'] ?: ($row['floor_id'] ? 'Floor ID: ' . $row['floor_id'] : 'N/A'),
                     'old_suite_name' => null,
                     'new_suite_name' => null,
                     'meals_cancelled' => 0,
@@ -847,7 +873,7 @@ class Reports extends MY_Controller {
         
         // Get discharge events
         if ($event_type == 'all' || $event_type == 'discharge') {
-            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_of_discharge, p.date_modified, s.bed_no as suite_name, f.name as floor_name';
+            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_of_discharge, p.date_modified, s.bed_no as suite_name, f.name as floor_name, s.floor_id';
             if ($hasTimeColumns) {
                 $select_fields .= ', p.time_discharged';
             }
@@ -855,7 +881,7 @@ class Reports extends MY_Controller {
             $this->tenantDb->select($select_fields);
             $this->tenantDb->from('people p');
             $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
-            $this->tenantDb->join('foodmenuconfig f', 'f.id = p.floor_number AND f.listtype = "floor"', 'left');
+            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor_id AND f.listtype = "floor"', 'left');
             $this->tenantDb->where('p.date_of_discharge >=', $from_date);
             $this->tenantDb->where('p.date_of_discharge <=', $to_date);
             $this->tenantDb->where('p.status', 2); // Discharged status
@@ -877,8 +903,8 @@ class Reports extends MY_Controller {
                     'event_date' => $row['date_of_discharge'],
                     'event_time' => date('H:i:s', strtotime($event_datetime)),
                     'event_datetime' => $event_datetime,
-                    'suite_name' => $row['suite_name'] ?: 'Suite ' . $row['suite_number'],
-                    'floor_name' => $row['floor_name'] ?: 'Floor ' . $row['floor_number'],
+                    'suite_name' => $row['suite_name'] ?: ($row['suite_number'] ? 'Suite ID: ' . $row['suite_number'] : 'N/A'),
+                    'floor_name' => $row['floor_name'] ?: ($row['floor_id'] ? 'Floor ID: ' . $row['floor_id'] : 'N/A'),
                     'old_suite_name' => null,
                     'new_suite_name' => null,
                     'meals_cancelled' => 0, // Can't determine from legacy data
