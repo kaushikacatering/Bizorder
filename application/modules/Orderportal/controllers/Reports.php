@@ -762,7 +762,7 @@ class Reports extends MY_Controller {
             $this->tenantDb->join('Global_users u', 'u.id = pal.created_by', 'left');
             $this->tenantDb->join('people p', 'p.id = pal.patient_id', 'left');
             $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
-            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor_id AND f.listtype = "floor"', 'left');
+            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor AND f.listtype = "floor"', 'left');
             $this->tenantDb->where('DATE(pal.event_datetime) >=', $from_date);
             $this->tenantDb->where('DATE(pal.event_datetime) <=', $to_date);
             
@@ -825,93 +825,109 @@ class Reports extends MY_Controller {
     private function buildEventsFromPeopleTable($from_date, $to_date, $event_type) {
         $events = [];
         
-        // Check if time columns exist (migration may not have run yet)
-        $hasTimeColumns = $this->tenantDb->field_exists('time_onboarded', 'people');
+        // The suites table uses 'floor' (not 'floor_id') to reference foodmenuconfig.
+        // The people table has time_onboarded (datetime) and time_discharged (datetime) columns.
         
         // Get onboarding events
         if ($event_type == 'all' || $event_type == 'onboarding') {
-            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_onboarded, p.date_added, s.bed_no as suite_name, f.name as floor_name, s.floor_id';
-            if ($hasTimeColumns) {
-                $select_fields .= ', p.time_onboarded';
-            }
+            $sql = "SELECT 
+                        p.id as patient_id, 
+                        p.name as patient_name, 
+                        p.suite_number, 
+                        p.floor_number, 
+                        p.date_onboarded, 
+                        p.time_onboarded,
+                        p.date_added, 
+                        s.bed_no as suite_name, 
+                        f.name as floor_name
+                    FROM people p
+                    LEFT JOIN suites s ON s.id = p.suite_number
+                    LEFT JOIN foodmenuconfig f ON f.id = s.floor AND f.listtype = 'floor'
+                    WHERE p.date_onboarded >= ?
+                    AND p.date_onboarded <= ?
+                    ORDER BY p.date_onboarded DESC";
             
-            $this->tenantDb->select($select_fields);
-            $this->tenantDb->from('people p');
-            $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
-            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor_id AND f.listtype = "floor"', 'left');
-            $this->tenantDb->where('p.date_onboarded >=', $from_date);
-            $this->tenantDb->where('p.date_onboarded <=', $to_date);
-            $this->tenantDb->order_by('p.date_onboarded', 'DESC');
+            $query = $this->tenantDb->query($sql, [$from_date, $to_date]);
             
-            $onboarding_results = $this->tenantDb->get()->result_array();
-            
-            foreach ($onboarding_results as $row) {
-                $time_onboarded = isset($row['time_onboarded']) ? $row['time_onboarded'] : null;
-                $event_datetime = $time_onboarded 
-                    ? $time_onboarded 
-                    : ($row['date_added'] ?: $row['date_onboarded'] . ' 00:00:00');
+            if ($query && is_object($query)) {
+                $onboarding_results = $query->result_array();
                 
-                $events[] = [
-                    'id' => 'onboard_' . $row['patient_id'],
-                    'patient_id' => $row['patient_id'],
-                    'patient_name' => $row['patient_name'],
-                    'event_type' => 'onboarding',
-                    'event_date' => $row['date_onboarded'],
-                    'event_time' => date('H:i:s', strtotime($event_datetime)),
-                    'event_datetime' => $event_datetime,
-                    'suite_name' => $row['suite_name'] ?: ($row['suite_number'] ? 'Suite ID: ' . $row['suite_number'] : 'N/A'),
-                    'floor_name' => $row['floor_name'] ?: ($row['floor_id'] ? 'Floor ID: ' . $row['floor_id'] : 'N/A'),
-                    'old_suite_name' => null,
-                    'new_suite_name' => null,
-                    'meals_cancelled' => 0,
-                    'orders_transferred' => 0,
-                    'notes' => 'Patient onboarded',
-                    'created_by' => 'System (legacy data)'
-                ];
+                foreach ($onboarding_results as $row) {
+                    // Use time_onboarded (exact datetime), fallback to date_added, then date_onboarded
+                    $event_datetime = !empty($row['time_onboarded']) 
+                        ? $row['time_onboarded']
+                        : (!empty($row['date_added']) ? $row['date_added'] . ' 00:00:00' : $row['date_onboarded'] . ' 00:00:00');
+                    
+                    $events[] = [
+                        'id' => 'onboard_' . $row['patient_id'],
+                        'patient_id' => $row['patient_id'],
+                        'patient_name' => $row['patient_name'],
+                        'event_type' => 'onboarding',
+                        'event_date' => $row['date_onboarded'],
+                        'event_time' => date('H:i:s', strtotime($event_datetime)),
+                        'event_datetime' => $event_datetime,
+                        'suite_name' => $row['suite_name'] ?: ($row['suite_number'] ? 'Suite ID: ' . $row['suite_number'] : 'N/A'),
+                        'floor_name' => $row['floor_name'] ?: ($row['floor_number'] ? 'Floor ID: ' . $row['floor_number'] : 'N/A'),
+                        'old_suite_name' => null,
+                        'new_suite_name' => null,
+                        'meals_cancelled' => 0,
+                        'orders_transferred' => 0,
+                        'notes' => 'Patient onboarded',
+                        'created_by' => 'System (legacy data)'
+                    ];
+                }
             }
         }
         
         // Get discharge events
         if ($event_type == 'all' || $event_type == 'discharge') {
-            $select_fields = 'p.id as patient_id, p.name as patient_name, p.suite_number, p.floor_number, p.date_of_discharge, p.date_modified, s.bed_no as suite_name, f.name as floor_name, s.floor_id';
-            if ($hasTimeColumns) {
-                $select_fields .= ', p.time_discharged';
-            }
+            $sql = "SELECT 
+                        p.id as patient_id, 
+                        p.name as patient_name, 
+                        p.suite_number, 
+                        p.floor_number, 
+                        p.date_of_discharge, 
+                        p.time_discharged,
+                        p.date_modified, 
+                        s.bed_no as suite_name, 
+                        f.name as floor_name
+                    FROM people p
+                    LEFT JOIN suites s ON s.id = p.suite_number
+                    LEFT JOIN foodmenuconfig f ON f.id = s.floor AND f.listtype = 'floor'
+                    WHERE p.date_of_discharge >= ?
+                    AND p.date_of_discharge <= ?
+                    AND p.status = 2
+                    ORDER BY p.date_of_discharge DESC";
             
-            $this->tenantDb->select($select_fields);
-            $this->tenantDb->from('people p');
-            $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
-            $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor_id AND f.listtype = "floor"', 'left');
-            $this->tenantDb->where('p.date_of_discharge >=', $from_date);
-            $this->tenantDb->where('p.date_of_discharge <=', $to_date);
-            $this->tenantDb->where('p.status', 2); // Discharged status
-            $this->tenantDb->order_by('p.date_of_discharge', 'DESC');
+            $query = $this->tenantDb->query($sql, [$from_date, $to_date]);
             
-            $discharge_results = $this->tenantDb->get()->result_array();
-            
-            foreach ($discharge_results as $row) {
-                $time_discharged = isset($row['time_discharged']) ? $row['time_discharged'] : null;
-                $event_datetime = $time_discharged 
-                    ? $time_discharged 
-                    : ($row['date_modified'] ?: $row['date_of_discharge'] . ' 00:00:00');
+            if ($query && is_object($query)) {
+                $discharge_results = $query->result_array();
                 
-                $events[] = [
-                    'id' => 'discharge_' . $row['patient_id'],
-                    'patient_id' => $row['patient_id'],
-                    'patient_name' => $row['patient_name'],
-                    'event_type' => 'discharge',
-                    'event_date' => $row['date_of_discharge'],
-                    'event_time' => date('H:i:s', strtotime($event_datetime)),
-                    'event_datetime' => $event_datetime,
-                    'suite_name' => $row['suite_name'] ?: ($row['suite_number'] ? 'Suite ID: ' . $row['suite_number'] : 'N/A'),
-                    'floor_name' => $row['floor_name'] ?: ($row['floor_id'] ? 'Floor ID: ' . $row['floor_id'] : 'N/A'),
-                    'old_suite_name' => null,
-                    'new_suite_name' => null,
-                    'meals_cancelled' => 0, // Can't determine from legacy data
-                    'orders_transferred' => 0,
-                    'notes' => 'Patient discharged',
-                    'created_by' => 'System (legacy data)'
-                ];
+                foreach ($discharge_results as $row) {
+                    // Use time_discharged (exact datetime), fallback to date_modified, then date_of_discharge
+                    $event_datetime = !empty($row['time_discharged']) 
+                        ? $row['time_discharged']
+                        : (!empty($row['date_modified']) ? $row['date_modified'] . ' 00:00:00' : $row['date_of_discharge'] . ' 00:00:00');
+                    
+                    $events[] = [
+                        'id' => 'discharge_' . $row['patient_id'],
+                        'patient_id' => $row['patient_id'],
+                        'patient_name' => $row['patient_name'],
+                        'event_type' => 'discharge',
+                        'event_date' => $row['date_of_discharge'],
+                        'event_time' => date('H:i:s', strtotime($event_datetime)),
+                        'event_datetime' => $event_datetime,
+                        'suite_name' => $row['suite_name'] ?: ($row['suite_number'] ? 'Suite ID: ' . $row['suite_number'] : 'N/A'),
+                        'floor_name' => $row['floor_name'] ?: ($row['floor_number'] ? 'Floor ID: ' . $row['floor_number'] : 'N/A'),
+                        'old_suite_name' => null,
+                        'new_suite_name' => null,
+                        'meals_cancelled' => 0, // Can't determine from legacy data
+                        'orders_transferred' => 0,
+                        'notes' => 'Patient discharged',
+                        'created_by' => 'System (legacy data)'
+                    ];
+                }
             }
         }
         
