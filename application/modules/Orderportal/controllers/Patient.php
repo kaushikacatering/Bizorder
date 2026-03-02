@@ -771,6 +771,123 @@ class Patient extends MY_Controller
             log_message('info', "NOTIFICATION SENT: Chef notified about $cancelled_count cancelled items for suite $suite_name due to patient discharge");
         }
         
+        // ═══════════════════════════════════════════════════════════════════
+        // STEP 4: SEND EMAIL NOTIFICATION FOR DISCHARGE CANCELLATION
+        // ═══════════════════════════════════════════════════════════════════
+        if ($cancelled_count > 0) {
+            try {
+                $discharge_time = $australiaTime->format('d M Y h:i A');
+                $unique_dates = array_unique($notification_dates);
+                
+                // Fetch cancelled item details for this suite from today's orders
+                $cancelled_details_sql = "SELECT 
+                        opo.id,
+                        opo.category_id,
+                        opo.cancel_reason,
+                        opo.cancelled_at,
+                        o.date as order_date,
+                        fc.name as category_name,
+                        md.name as menu_name,
+                        mo.menu_option_name
+                    FROM orders_to_patient_options opo
+                    LEFT JOIN orders o ON o.order_id = opo.order_id
+                    LEFT JOIN foodmenuconfig fc ON fc.id = opo.category_id AND fc.listtype = 'category'
+                    LEFT JOIN menuDetails md ON md.id = opo.menu_id
+                    LEFT JOIN menu_options mo ON mo.id = opo.option_id
+                    WHERE opo.bed_id = ?
+                    AND opo.is_cancelled = 1
+                    AND opo.patient_name_snapshot = ?
+                    ORDER BY o.date ASC, opo.category_id ASC";
+                
+                $detail_query = $this->tenantDb->query($cancelled_details_sql, [$suite_id, $patient_name]);
+                $cancelled_items = ($detail_query && is_object($detail_query)) ? $detail_query->result_array() : [];
+                
+                // Build HTML email
+                $email_subject = "Patient Discharged - Meals Cancelled | Suite {$suite_name} | {$patient_name}";
+                
+                $email_body = '
+                <html>
+                <head>
+                    <style>
+                        body { font-family: Arial, sans-serif; font-size: 14px; color: #333; }
+                        .header { background-color: #dc3545; color: #fff; padding: 15px 20px; border-radius: 6px 6px 0 0; }
+                        .header h2 { margin: 0; font-size: 18px; }
+                        .content { padding: 20px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 6px 6px; }
+                        .info-table { width: 100%; margin-bottom: 15px; }
+                        .info-table td { padding: 6px 10px; }
+                        .info-table .label { font-weight: bold; width: 160px; color: #555; }
+                        table.items { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        table.items th { background-color: #f8f9fa; padding: 8px 12px; border: 1px solid #ddd; text-align: left; font-size: 13px; }
+                        table.items td { padding: 8px 12px; border: 1px solid #ddd; font-size: 13px; }
+                        table.items tr:nth-child(even) { background-color: #fafafa; }
+                        .footer { margin-top: 20px; font-size: 12px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>&#9888; Patient Discharged - Meals Cancelled</h2>
+                    </div>
+                    <div class="content">
+                        <table class="info-table">
+                            <tr><td class="label">Patient Name:</td><td>' . htmlspecialchars($patient_name) . '</td></tr>
+                            <tr><td class="label">Suite / Room:</td><td>' . htmlspecialchars($suite_name) . '</td></tr>
+                            <tr><td class="label">Discharge Time:</td><td>' . $discharge_time . '</td></tr>
+                            <tr><td class="label">Items Cancelled:</td><td>' . $cancelled_count . '</td></tr>
+                            <tr><td class="label">Affected Date(s):</td><td>' . implode(', ', $unique_dates) . '</td></tr>
+                        </table>';
+                
+                if (!empty($cancelled_items)) {
+                    $email_body .= '
+                        <h3 style="margin-top: 15px; font-size: 15px; color: #333;">Cancelled Meal Details</h3>
+                        <table class="items">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Meal</th>
+                                    <th>Menu Item</th>
+                                    <th>Option</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>';
+                    
+                    foreach ($cancelled_items as $item) {
+                        $reason_display = str_replace('_', ' ', $item['cancel_reason'] ?? '');
+                        $reason_display = ucwords($reason_display);
+                        
+                        $email_body .= '
+                                <tr>
+                                    <td>' . date('d M Y', strtotime($item['order_date'])) . '</td>
+                                    <td>' . htmlspecialchars($item['category_name'] ?? 'N/A') . '</td>
+                                    <td>' . htmlspecialchars($item['menu_name'] ?? 'N/A') . '</td>
+                                    <td>' . htmlspecialchars($item['menu_option_name'] ?? '-') . '</td>
+                                    <td>' . htmlspecialchars($reason_display) . '</td>
+                                </tr>';
+                    }
+                    
+                    $email_body .= '
+                            </tbody>
+                        </table>';
+                }
+                
+                $email_body .= '
+                        <div class="footer">
+                            <p>This is an automated notification from BizOrder system.</p>
+                            <p>Generated at: ' . $discharge_time . '</p>
+                        </div>
+                    </div>
+                </body>
+                </html>';
+                
+                $this->sendEmail('kaushika@aaria.com.au', $email_subject, $email_body);
+                
+                log_message('info', "DISCHARGE EMAIL SENT: Email notification sent to kaushika@aaria.com.au for suite $suite_name discharge ($cancelled_count items cancelled)");
+                
+            } catch (Exception $e) {
+                log_message('error', "DISCHARGE EMAIL FAILED: Could not send email for suite $suite_name discharge - " . $e->getMessage());
+            }
+        }
+        
         return $cancelled_count;
     }
     

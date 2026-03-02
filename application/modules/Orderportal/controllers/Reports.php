@@ -72,6 +72,9 @@ class Reports extends MY_Controller {
      * Get beds/suites serviced per day
      */
     private function getBedsServicedPerDay($from_date, $to_date) {
+        // Count beds that had ANY order for the day, regardless of cancellation.
+        // A bed is "serviced" if an order was placed for it — discharge cancellations
+        // only stop future meals; meals already served/planned still count.
         $sql = "SELECT 
                     o.date as order_date,
                     COUNT(DISTINCT opo.bed_id) as beds_count
@@ -82,7 +85,6 @@ class Reports extends MY_Controller {
                 AND o.status != 0
                 AND s.is_deleted = 0
                 AND s.status = 1
-                AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
                 GROUP BY o.date
                 ORDER BY o.date ASC";
         
@@ -100,6 +102,8 @@ class Reports extends MY_Controller {
         $month_end = date('Y-m-t', strtotime($to_date));
         
         // Get beds per day for the current month
+        // Count beds with ANY order (including cancelled due to discharge)
+        // because a bed was serviced if an order existed for it that day
         $sql = "SELECT 
                     o.date as order_date,
                     COUNT(DISTINCT opo.bed_id) as beds_count
@@ -110,7 +114,6 @@ class Reports extends MY_Controller {
                 AND o.status != 0
                 AND s.is_deleted = 0
                 AND s.status = 1
-                AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
                 GROUP BY o.date
                 ORDER BY o.date ASC";
         
