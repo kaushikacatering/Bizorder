@@ -109,8 +109,13 @@ class AuditTrail_model extends CI_Model {
             'created_by' => $userId,
             'created_by_name' => $userName,
             'ip_address' => $CI->input->ip_address(),
-            'json_data' => json_encode($jsonPayload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
         );
+        
+        // Only include json_data if the column exists in the table
+        // (The column may not exist in older schemas — omitting it prevents silent INSERT failures)
+        if ($this->tenantDb->field_exists('json_data', 'patient_audit_log')) {
+            $auditData['json_data'] = json_encode($jsonPayload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        }
         
         $result = $this->tenantDb->insert('patient_audit_log', $auditData);
         
@@ -120,7 +125,9 @@ class AuditTrail_model extends CI_Model {
             return $insertId;
         }
         
-        log_message('error', "AUDIT LOG FAILED: Failed to log {$eventType} event for patient ID " . ($data['patient_id'] ?? 'UNKNOWN'));
+        // Log the actual DB error for debugging
+        $dbError = $this->tenantDb->error();
+        log_message('error', "AUDIT LOG FAILED: Failed to log {$eventType} event for patient ID " . ($data['patient_id'] ?? 'UNKNOWN') . ". DB Error: " . json_encode($dbError));
         return false;
     }
     

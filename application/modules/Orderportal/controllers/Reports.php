@@ -826,7 +826,7 @@ class Reports extends MY_Controller {
                     'orders_transferred' => $row['orders_affected'] ?? 0,
                     'notes' => $row['notes'],
                     'created_by' => $created_by,
-                    'json_data' => $row['json_data'] ?? null
+                    'json_data' => isset($row['json_data']) ? $row['json_data'] : null
                 ];
             }
         } else {
@@ -945,6 +945,62 @@ class Reports extends MY_Controller {
                         'notes' => 'Patient discharged',
                         'created_by' => 'System (legacy data)'
                     ];
+                }
+            }
+        }
+        
+        // Get transfer events from patient_audit_log if it exists
+        // (Transfers cannot be reconstructed from the people table alone since
+        //  it only stores the CURRENT suite, not the transfer history.)
+        if ($event_type == 'all' || $event_type == 'transfer') {
+            if ($this->tenantDb->table_exists('patient_audit_log')) {
+                $sql = "SELECT 
+                            pal.id,
+                            pal.patient_id,
+                            pal.patient_name,
+                            pal.event_datetime,
+                            pal.event_date,
+                            pal.old_suite_id,
+                            pal.old_suite_number,
+                            pal.old_floor_id,
+                            pal.old_floor_name,
+                            pal.new_suite_id,
+                            pal.new_suite_number,
+                            pal.new_floor_id,
+                            pal.new_floor_name,
+                            pal.notes,
+                            pal.orders_affected,
+                            pal.created_by_name
+                        FROM patient_audit_log pal
+                        WHERE pal.event_type = 'transfer'
+                        AND pal.event_date >= ?
+                        AND pal.event_date <= ?
+                        ORDER BY pal.event_datetime DESC";
+                
+                $query = $this->tenantDb->query($sql, [$from_date, $to_date]);
+                
+                if ($query && is_object($query)) {
+                    $transfer_results = $query->result_array();
+                    
+                    foreach ($transfer_results as $row) {
+                        $events[] = [
+                            'id' => $row['id'],
+                            'patient_id' => $row['patient_id'],
+                            'patient_name' => $row['patient_name'],
+                            'event_type' => 'transfer',
+                            'event_date' => $row['event_date'],
+                            'event_time' => date('H:i:s', strtotime($row['event_datetime'])),
+                            'event_datetime' => $row['event_datetime'],
+                            'suite_name' => $row['new_suite_number'] ?: $row['old_suite_number'] ?: 'N/A',
+                            'floor_name' => $row['new_floor_name'] ?: $row['old_floor_name'] ?: 'N/A',
+                            'old_suite_name' => $row['old_suite_number'],
+                            'new_suite_name' => $row['new_suite_number'],
+                            'meals_cancelled' => 0,
+                            'orders_transferred' => $row['orders_affected'] ?? 0,
+                            'notes' => $row['notes'],
+                            'created_by' => $row['created_by_name'] ?: 'System'
+                        ];
+                    }
                 }
             }
         }
