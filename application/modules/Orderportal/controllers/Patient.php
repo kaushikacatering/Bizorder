@@ -585,18 +585,18 @@ class Patient extends MY_Controller
         try {
             $this->load->model('AuditTrail_model');
             
-            // Get old suite details
-            $old_suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no', 'floor_id'], ['id' => $oldSuiteId]);
+            // Get old suite details — column is 'floor' (varchar), NOT 'floor_id'
+            $old_suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no', 'floor'], ['id' => $oldSuiteId]);
             $old_suite_name = !empty($old_suite_details) ? $old_suite_details[0]['bed_no'] : "Suite {$oldSuiteId}";
-            $old_floor_id = !empty($old_suite_details) ? $old_suite_details[0]['floor_id'] : null;
+            $old_floor_id = !empty($old_suite_details) ? $old_suite_details[0]['floor'] : null;
             
             $old_floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $old_floor_id, 'listtype' => 'floor']);
             $old_floor_name = !empty($old_floor_details) ? $old_floor_details[0]['name'] : "Floor {$old_floor_id}";
             
             // Get new suite details
-            $new_suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no', 'floor_id'], ['id' => $newSuiteId]);
+            $new_suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no', 'floor'], ['id' => $newSuiteId]);
             $new_suite_name = !empty($new_suite_details) ? $new_suite_details[0]['bed_no'] : "Suite {$newSuiteId}";
-            $new_floor_id = !empty($new_suite_details) ? $new_suite_details[0]['floor_id'] : null;
+            $new_floor_id = !empty($new_suite_details) ? $new_suite_details[0]['floor'] : null;
             
             $new_floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $new_floor_id, 'listtype' => 'floor']);
             $new_floor_name = !empty($new_floor_details) ? $new_floor_details[0]['name'] : "Floor {$new_floor_id}";

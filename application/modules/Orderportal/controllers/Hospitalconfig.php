@@ -1724,18 +1724,32 @@ private function logTransferToAuditTrailFromConfig($patientId, $patientName, $ol
         $this->load->model('Orderportal/AuditTrail_model', 'AuditTrail_model');
         $this->load->helper('custom');
         
-        // Get floor names
-        $old_floor_details = $this->tenantDb->where('id', $oldSuite['floor_id'])
-                                           ->where('listtype', 'floor')
-                                           ->get('foodmenuconfig')
-                                           ->row_array();
-        $old_floor_name = !empty($old_floor_details) ? $old_floor_details['name'] : "Floor {$oldSuite['floor_id']}";
+        // Get floor IDs from suites — column is 'floor' (varchar), NOT 'floor_id'
+        $oldFloorId = $oldSuite['floor'] ?? null;
+        $newFloorId = $newSuite['floor'] ?? null;
         
-        $new_floor_details = $this->tenantDb->where('id', $newSuite['floor_id'])
-                                           ->where('listtype', 'floor')
-                                           ->get('foodmenuconfig')
-                                           ->row_array();
-        $new_floor_name = !empty($new_floor_details) ? $new_floor_details['name'] : "Floor {$newSuite['floor_id']}";
+        // Get floor names from foodmenuconfig
+        $old_floor_name = "Floor {$oldFloorId}";
+        if (!empty($oldFloorId)) {
+            $old_floor_details = $this->tenantDb->where('id', $oldFloorId)
+                                               ->where('listtype', 'floor')
+                                               ->get('foodmenuconfig')
+                                               ->row_array();
+            if (!empty($old_floor_details)) {
+                $old_floor_name = $old_floor_details['name'];
+            }
+        }
+        
+        $new_floor_name = "Floor {$newFloorId}";
+        if (!empty($newFloorId)) {
+            $new_floor_details = $this->tenantDb->where('id', $newFloorId)
+                                               ->where('listtype', 'floor')
+                                               ->get('foodmenuconfig')
+                                               ->row_array();
+            if (!empty($new_floor_details)) {
+                $new_floor_name = $new_floor_details['name'];
+            }
+        }
         
         $notes = "Transferred from {$oldSuite['bed_no']} to {$newSuite['bed_no']} via drag-drop";
         if ($ordersTransferred > 0) {
@@ -1747,11 +1761,11 @@ private function logTransferToAuditTrailFromConfig($patientId, $patientName, $ol
             $patientName,
             $oldSuiteId,
             $oldSuite['bed_no'],
-            $oldSuite['floor_id'],
+            $oldFloorId,
             $old_floor_name,
             $newSuiteId,
             $newSuite['bed_no'],
-            $newSuite['floor_id'],
+            $newFloorId,
             $new_floor_name,
             $ordersTransferred,
             $notes
