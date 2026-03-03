@@ -296,6 +296,10 @@
                                                         <?php if (!empty($item['patient_name_snapshot'])): ?>
                                                             <i class="ri-user-line text-muted me-1"></i>
                                                             <?php echo htmlspecialchars($item['patient_name_snapshot']); ?>
+                                                        <?php elseif (!empty($item['current_patient_name'])): ?>
+                                                            <i class="ri-user-line text-muted me-1"></i>
+                                                            <?php echo htmlspecialchars($item['current_patient_name']); ?>
+                                                            <small class="text-muted">(current)</small>
                                                         <?php else: ?>
                                                             <span class="text-muted">N/A</span>
                                                         <?php endif; ?>

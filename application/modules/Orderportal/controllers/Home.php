@@ -1851,60 +1851,132 @@ class Home extends MY_Controller {
      */
     private function autoMarkDischargedPatientsInactive() {
         try {
+            $this->load->helper('custom');
             $today = date('Y-m-d');
             
-            // Count how many stale records exist (for logging)
-            $this->tenantDb->select('COUNT(*) as stale_count');
-            $this->tenantDb->from('people');
-            $this->tenantDb->where('status', 1);
-            $this->tenantDb->where('date_of_discharge <', $today);
-            $this->tenantDb->where('date_of_discharge IS NOT NULL', null, false);
-            $countQuery = $this->tenantDb->get();
+            // Get all stale patients (status=1 but discharge date has passed)
+            $this->tenantDb->select('p.id, p.name, p.suite_number, p.floor_number, p.date_of_discharge, p.time_discharged, s.bed_no as suite_name');
+            $this->tenantDb->from('people p');
+            $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
+            $this->tenantDb->where('p.status', 1);
+            $this->tenantDb->where('p.date_of_discharge <', $today);
+            $this->tenantDb->where('p.date_of_discharge IS NOT NULL', null, false);
+            $staleQuery = $this->tenantDb->get();
             
-            if ($countQuery && $countQuery->num_rows() > 0) {
-                $staleCount = $countQuery->row_array()['stale_count'];
+            if ($staleQuery && $staleQuery->num_rows() > 0) {
+                $stalePatients = $staleQuery->result_array();
+                $staleCount = count($stalePatients);
                 
-                if ($staleCount > 0) {
-                    // Log the cleanup action
-                    log_message('info', "Auto-Cleanup: Found {$staleCount} patient(s) with past discharge dates. Marking as inactive...");
+                log_message('info', "Auto-Cleanup: Found {$staleCount} patient(s) with past discharge dates. Processing discharge...");
+                
+                // Load AuditTrail model for logging
+                try {
+                    $this->load->model('AuditTrail_model');
+                } catch (Exception $e) {
+                    log_message('error', 'Auto-Cleanup: Could not load AuditTrail_model: ' . $e->getMessage());
+                }
+                
+                foreach ($stalePatients as $patient) {
+                    $patient_id = $patient['id'];
+                    $patient_name = $patient['name'] ?: 'Unknown';
+                    $suite_number = $patient['suite_number'];
+                    $suite_name = $patient['suite_name'] ?: "Suite {$suite_number}";
                     
-                    // Get details of patients being updated (for audit trail)
-                    $this->tenantDb->select('p.id, p.name, s.bed_no as suite, p.date_of_discharge');
-                    $this->tenantDb->from('people p');
-                    $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
-                    $this->tenantDb->where('p.status', 1);
-                    $this->tenantDb->where('p.date_of_discharge <', $today);
-                    $this->tenantDb->where('p.date_of_discharge IS NOT NULL', null, false);
-                    $this->tenantDb->limit(10); // Log first 10 for audit
-                    $detailQuery = $this->tenantDb->get();
+                    log_message('info', "  - Auto-Discharge: Suite: {$suite_name}, Patient: {$patient_name}, Discharge Date: {$patient['date_of_discharge']}");
                     
-                    if ($detailQuery && $detailQuery->num_rows() > 0) {
-                        $patients = $detailQuery->result_array();
-                        foreach ($patients as $patient) {
-                            log_message('info', "  - Suite: {$patient['suite']}, Patient: {$patient['name']}, Discharge: {$patient['date_of_discharge']}");
+                    // Update patient status to DISCHARGED (status=2, NOT 0)
+                    $update_data = array(
+                        'status' => 2,
+                        'date_modified' => date('Y-m-d H:i:s')
+                    );
+                    
+                    // Set time_discharged if not already set
+                    if (empty($patient['time_discharged'])) {
+                        $update_data['time_discharged'] = $patient['date_of_discharge'] . ' 23:59:00';
+                    }
+                    
+                    $this->tenantDb->where('id', $patient_id);
+                    $this->tenantDb->update('people', $update_data);
+                    
+                    // Mark suite as vacant
+                    if (!empty($suite_number)) {
+                        $this->tenantDb->where('id', $suite_number);
+                        $this->tenantDb->update('suites', array('is_vaccant' => 1));
+                    }
+                    
+                    // Cancel future orders for this suite
+                    $cancelled_count = $this->autoCancelOrdersForSuite($suite_number, $patient_name, $suite_name);
+                    
+                    // Log to audit trail
+                    if (isset($this->AuditTrail_model)) {
+                        try {
+                            $floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $patient['floor_number'], 'listtype' => 'floor']);
+                            $floor_name = !empty($floor_details) ? $floor_details[0]['name'] : "Floor {$patient['floor_number']}";
+                            
+                            $this->AuditTrail_model->logDischarge(
+                                $patient_id,
+                                $patient_name,
+                                $suite_number,
+                                $suite_name,
+                                $patient['floor_number'],
+                                $floor_name,
+                                $cancelled_count,
+                                'Auto-discharged: discharge date (' . $patient['date_of_discharge'] . ') has passed'
+                            );
+                        } catch (Exception $e) {
+                            log_message('error', 'Auto-Cleanup: Audit trail log failed for patient ' . $patient_id . ': ' . $e->getMessage());
                         }
                     }
-                    
-                    // Perform the update - mark as inactive
-                    $this->tenantDb->set('status', 0);
-                    $this->tenantDb->where('status', 1);
-                    $this->tenantDb->where('date_of_discharge <', $today);
-                    $this->tenantDb->where('date_of_discharge IS NOT NULL', null, false);
-                    $updateResult = $this->tenantDb->update('people');
-                    
-                    if ($updateResult) {
-                        $updatedCount = $this->tenantDb->affected_rows();
-                        log_message('info', "Auto-Cleanup: Successfully marked {$updatedCount} patient(s) as inactive");
-                    } else {
-                        log_message('error', "Auto-Cleanup: Failed to update patient records - " . $this->tenantDb->error()['message']);
-                    }
                 }
+                
+                log_message('info', "Auto-Cleanup: Successfully processed {$staleCount} patient(s) as discharged (status=2)");
             }
             
         } catch (Exception $e) {
             // Don't let cleanup errors break the dashboard
             log_message('error', 'Auto-Cleanup Error: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * Cancel all future orders for a suite during auto-cleanup discharge
+     * Simplified version without notification (since discharge date already passed)
+     */
+    private function autoCancelOrdersForSuite($suite_id, $patient_name, $suite_name) {
+        if (empty($suite_id)) return 0;
+        
+        $cancelled_count = 0;
+        $today = date('Y-m-d');
+        
+        // Find all active order items for this suite with date >= today
+        $this->tenantDb->select('opo.id');
+        $this->tenantDb->from('orders_to_patient_options opo');
+        $this->tenantDb->join('orders o', 'o.order_id = opo.order_id', 'inner');
+        $this->tenantDb->where('opo.bed_id', $suite_id);
+        $this->tenantDb->where('opo.is_cancelled', 0);
+        $this->tenantDb->where('o.date >=', $today);
+        $items_query = $this->tenantDb->get();
+        
+        if ($items_query && $items_query->num_rows() > 0) {
+            $item_ids = array_column($items_query->result_array(), 'id');
+            
+            $cancel_data = array(
+                'is_cancelled' => 1,
+                'cancel_reason' => 'patient_discharged_auto',
+                'cancelled_at' => date('Y-m-d H:i:s'),
+                'cancelled_by' => null,
+                'patient_name_snapshot' => $patient_name,
+                'suite_name_snapshot' => $suite_name
+            );
+            
+            $this->tenantDb->where_in('id', $item_ids);
+            $this->tenantDb->update('orders_to_patient_options', $cancel_data);
+            $cancelled_count = $this->tenantDb->affected_rows();
+            
+            log_message('info', "Auto-Cleanup: Cancelled {$cancelled_count} order items for suite {$suite_name}");
+        }
+        
+        return $cancelled_count;
     }
     
     /**

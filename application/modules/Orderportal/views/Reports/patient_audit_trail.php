@@ -256,7 +256,9 @@
                                                 <th>Floor</th>
                                                 <th>Transfer Details</th>
                                                 <th>Meals Affected</th>
-                                              
+                                                <th>Notes</th>
+                                                <th>Recorded By</th>
+                                                <th>Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -327,6 +329,21 @@
                                                             <span class="text-muted">-</span>
                                                         <?php endif; ?>
                                                     </td>
+                                                    <td>
+                                                        <?php echo !empty($event['notes']) ? htmlspecialchars($event['notes']) : '<span class="text-muted">-</span>'; ?>
+                                                    </td>
+                                                    <td>
+                                                        <?php echo htmlspecialchars($event['created_by'] ?? 'System'); ?>
+                                                    </td>
+                                                    <td>
+                                                        <?php if (!empty($event['json_data'])): ?>
+                                                            <button class="btn btn-sm btn-outline-secondary" onclick="viewJsonData(<?php echo htmlspecialchars(json_encode($event['json_data'])); ?>)" title="View JSON Log">
+                                                                <i class="ri-code-s-slash-line"></i>
+                                                            </button>
+                                                        <?php else: ?>
+                                                            <span class="text-muted">-</span>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     
                                                 </tr>
                                             <?php endforeach; ?>
@@ -339,6 +356,27 @@
                 </div>
             </div>
             
+        </div>
+    </div>
+</div>
+
+<!-- JSON Data Modal -->
+<div class="modal fade" id="jsonDataModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="ri-code-s-slash-line me-1"></i> Audit Event - JSON Log</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="jsonDataContent" style="background: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 500px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="copyJsonData()">
+                    <i class="ri-file-copy-line me-1"></i> Copy JSON
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -361,4 +399,33 @@ $(document).ready(function() {
         });
     }
 });
+
+// View JSON data in modal
+function viewJsonData(jsonStr) {
+    try {
+        var data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+        document.getElementById('jsonDataContent').textContent = JSON.stringify(data, null, 2);
+    } catch (e) {
+        document.getElementById('jsonDataContent').textContent = jsonStr;
+    }
+    var modal = new bootstrap.Modal(document.getElementById('jsonDataModal'));
+    modal.show();
+}
+
+// Copy JSON data to clipboard
+function copyJsonData() {
+    var content = document.getElementById('jsonDataContent').textContent;
+    navigator.clipboard.writeText(content).then(function() {
+        alert('JSON data copied to clipboard!');
+    }).catch(function() {
+        // Fallback
+        var textArea = document.createElement('textarea');
+        textArea.value = content;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('JSON data copied to clipboard!');
+    });
+}
 </script>

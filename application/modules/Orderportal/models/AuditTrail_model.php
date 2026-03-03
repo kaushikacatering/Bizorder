@@ -55,6 +55,40 @@ class AuditTrail_model extends CI_Model {
             }
         }
         
+        // Build comprehensive JSON data payload for audit logging
+        $jsonPayload = array(
+            'event_type' => $eventType,
+            'timestamp' => $australiaTime,
+            'patient' => array(
+                'id' => $data['patient_id'] ?? 0,
+                'name' => $data['patient_name'] ?? 'Unknown'
+            ),
+            'location' => array(
+                'old_suite' => array(
+                    'id' => $data['old_suite_id'] ?? null,
+                    'number' => $data['old_suite_number'] ?? null,
+                    'floor_id' => $data['old_floor_id'] ?? null,
+                    'floor_name' => $data['old_floor_name'] ?? null
+                ),
+                'new_suite' => array(
+                    'id' => $data['new_suite_id'] ?? null,
+                    'number' => $data['new_suite_number'] ?? null,
+                    'floor_id' => $data['new_floor_id'] ?? null,
+                    'floor_name' => $data['new_floor_name'] ?? null
+                )
+            ),
+            'impact' => array(
+                'orders_affected' => $data['orders_affected'] ?? 0,
+                'meals_cancelled' => $data['meals_cancelled'] ?? 0
+            ),
+            'notes' => $data['notes'] ?? null,
+            'performed_by' => array(
+                'user_id' => $userId,
+                'username' => $userName,
+                'ip_address' => $CI->input->ip_address()
+            )
+        );
+        
         $auditData = array(
             'patient_id' => $data['patient_id'] ?? 0,
             'patient_name' => $data['patient_name'] ?? 'Unknown',
@@ -74,14 +108,15 @@ class AuditTrail_model extends CI_Model {
             'meals_cancelled' => $data['meals_cancelled'] ?? 0,
             'created_by' => $userId,
             'created_by_name' => $userName,
-            'ip_address' => $CI->input->ip_address()
+            'ip_address' => $CI->input->ip_address(),
+            'json_data' => json_encode($jsonPayload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
         );
         
         $result = $this->tenantDb->insert('patient_audit_log', $auditData);
         
         if ($result) {
             $insertId = $this->tenantDb->insert_id();
-            log_message('info', "AUDIT LOG: {$eventType} event logged for patient ID {$data['patient_id']}. Audit ID: {$insertId}");
+            log_message('info', "AUDIT LOG: {$eventType} event logged for patient ID {$data['patient_id']}. Audit ID: {$insertId}. JSON: " . json_encode($jsonPayload));
             return $insertId;
         }
         

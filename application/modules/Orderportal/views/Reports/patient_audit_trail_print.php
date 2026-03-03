@@ -196,7 +196,8 @@
                     <th>Floor</th>
                     <th>Transfer Details</th>
                     <th>Meals Affected</th>
-                   
+                    <th>Notes</th>
+                    <th>Recorded By</th>
                 </tr>
             </thead>
             <tbody>
@@ -230,6 +231,8 @@
                             }
                             ?>
                         </td>
+                        <td><?php echo htmlspecialchars($event['notes'] ?? '-'); ?></td>
+                        <td><?php echo htmlspecialchars($event['created_by'] ?? 'System'); ?></td>
                        
                     </tr>
                 <?php endforeach; ?>

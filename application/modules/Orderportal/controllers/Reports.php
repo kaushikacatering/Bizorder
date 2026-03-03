@@ -72,12 +72,13 @@ class Reports extends MY_Controller {
      * Get beds/suites serviced per day
      */
     private function getBedsServicedPerDay($from_date, $to_date) {
-        // Count beds that had ANY order for the day, regardless of cancellation.
-        // A bed is "serviced" if an order was placed for it — discharge cancellations
-        // only stop future meals; meals already served/planned still count.
+        // Count distinct (bed_id, patient_id) pairs per day.
+        // If two different patients are served in the same bed on the same day
+        // (e.g. Patient A discharged after breakfast, Patient B onboarded for dinner),
+        // each patient-bed combination counts as one "bed serviced".
         $sql = "SELECT 
                     o.date as order_date,
-                    COUNT(DISTINCT opo.bed_id) as beds_count
+                    COUNT(DISTINCT opo.bed_id, opo.patient_id) as beds_count
                 FROM orders o
                 INNER JOIN orders_to_patient_options opo ON opo.order_id = o.order_id
                 INNER JOIN suites s ON s.id = opo.bed_id
@@ -102,11 +103,11 @@ class Reports extends MY_Controller {
         $month_end = date('Y-m-t', strtotime($to_date));
         
         // Get beds per day for the current month
-        // Count beds with ANY order (including cancelled due to discharge)
-        // because a bed was serviced if an order existed for it that day
+        // Count distinct (bed_id, patient_id) pairs — if two patients
+        // are served in the same bed on one day, each counts separately.
         $sql = "SELECT 
                     o.date as order_date,
-                    COUNT(DISTINCT opo.bed_id) as beds_count
+                    COUNT(DISTINCT opo.bed_id, opo.patient_id) as beds_count
                 FROM orders o
                 INNER JOIN orders_to_patient_options opo ON opo.order_id = o.order_id
                 INNER JOIN suites s ON s.id = opo.bed_id
@@ -574,7 +575,8 @@ class Reports extends MY_Controller {
                     fc.name as category_name,
                     md.name as menu_name,
                     mo.menu_option_name,
-                    CONCAT(u.first_name, ' ', u.last_name) as cancelled_by_name
+                    CONCAT(u.first_name, ' ', u.last_name) as cancelled_by_name,
+                    p.name as current_patient_name
                 FROM orders_to_patient_options opo
                 LEFT JOIN orders o ON o.order_id = opo.order_id
                 LEFT JOIN suites s ON s.id = opo.bed_id
@@ -583,18 +585,24 @@ class Reports extends MY_Controller {
                 LEFT JOIN menuDetails md ON md.id = opo.menu_id
                 LEFT JOIN menu_options mo ON mo.id = opo.option_id
                 LEFT JOIN Global_users u ON u.id = opo.cancelled_by
+                LEFT JOIN people p ON p.id = opo.patient_id
                 WHERE opo.is_cancelled = 1
-                AND opo.cancelled_at >= ?
-                AND opo.cancelled_at <= ?";
+                AND (
+                    (opo.cancelled_at >= ? AND opo.cancelled_at <= ?)
+                    OR (opo.cancelled_at IS NULL AND o.date >= ? AND o.date <= ?)
+                )";
         
-        $params = [$from_date . ' 00:00:00', $to_date . ' 23:59:59'];
+        $params = [
+            $from_date . ' 00:00:00', $to_date . ' 23:59:59',
+            $from_date, $to_date
+        ];
         
         if (!empty($reason_filter)) {
             $sql .= " AND opo.cancel_reason LIKE ?";
             $params[] = '%' . $reason_filter . '%';
         }
         
-        $sql .= " ORDER BY opo.cancelled_at DESC, opo.order_id, opo.id";
+        $sql .= " ORDER BY COALESCE(opo.cancelled_at, o.date) DESC, opo.order_id, opo.id";
         
         $query = $this->tenantDb->query($sql, $params);
         return $query->result_array();
@@ -611,11 +619,17 @@ class Reports extends MY_Controller {
                     COUNT(DISTINCT opo.patient_id) as affected_patients,
                     SUM(opo.quantity) as total_quantity_cancelled
                 FROM orders_to_patient_options opo
+                LEFT JOIN orders o ON o.order_id = opo.order_id
                 WHERE opo.is_cancelled = 1
-                AND opo.cancelled_at >= ?
-                AND opo.cancelled_at <= ?";
+                AND (
+                    (opo.cancelled_at >= ? AND opo.cancelled_at <= ?)
+                    OR (opo.cancelled_at IS NULL AND o.date >= ? AND o.date <= ?)
+                )";
         
-        $query = $this->tenantDb->query($sql, [$from_date . ' 00:00:00', $to_date . ' 23:59:59']);
+        $query = $this->tenantDb->query($sql, [
+            $from_date . ' 00:00:00', $to_date . ' 23:59:59',
+            $from_date, $to_date
+        ]);
         return $query->row_array();
     }
     
@@ -766,8 +780,8 @@ class Reports extends MY_Controller {
             $this->tenantDb->join('people p', 'p.id = pal.patient_id', 'left');
             $this->tenantDb->join('suites s', 's.id = p.suite_number', 'left');
             $this->tenantDb->join('foodmenuconfig f', 'f.id = s.floor AND f.listtype = "floor"', 'left');
-            $this->tenantDb->where('DATE(pal.event_datetime) >=', $from_date);
-            $this->tenantDb->where('DATE(pal.event_datetime) <=', $to_date);
+            $this->tenantDb->where('pal.event_date >=', $from_date);
+            $this->tenantDb->where('pal.event_date <=', $to_date);
             
             if ($event_type != 'all') {
                 $this->tenantDb->where('pal.event_type', $event_type);
@@ -811,7 +825,8 @@ class Reports extends MY_Controller {
                     'meals_cancelled' => $row['meals_cancelled'],
                     'orders_transferred' => $row['orders_affected'] ?? 0,
                     'notes' => $row['notes'],
-                    'created_by' => $created_by
+                    'created_by' => $created_by,
+                    'json_data' => $row['json_data'] ?? null
                 ];
             }
         } else {
@@ -959,8 +974,8 @@ class Reports extends MY_Controller {
             // Counts from audit log
             $this->tenantDb->select('event_type, COUNT(*) as count, SUM(meals_cancelled) as meals_cancelled');
             $this->tenantDb->from('patient_audit_log');
-            $this->tenantDb->where('DATE(event_datetime) >=', $from_date);
-            $this->tenantDb->where('DATE(event_datetime) <=', $to_date);
+            $this->tenantDb->where('event_date >=', $from_date);
+            $this->tenantDb->where('event_date <=', $to_date);
             $this->tenantDb->group_by('event_type');
             
             $results = $this->tenantDb->get()->result_array();
@@ -977,11 +992,11 @@ class Reports extends MY_Controller {
             }
             
             // By day breakdown
-            $this->tenantDb->select('DATE(event_datetime) as event_date, event_type, COUNT(*) as count');
+            $this->tenantDb->select('event_date, event_type, COUNT(*) as count');
             $this->tenantDb->from('patient_audit_log');
-            $this->tenantDb->where('DATE(event_datetime) >=', $from_date);
-            $this->tenantDb->where('DATE(event_datetime) <=', $to_date);
-            $this->tenantDb->group_by('DATE(event_datetime), event_type');
+            $this->tenantDb->where('event_date >=', $from_date);
+            $this->tenantDb->where('event_date <=', $to_date);
+            $this->tenantDb->group_by('event_date, event_type');
             $this->tenantDb->order_by('event_date', 'ASC');
             
             $by_day_results = $this->tenantDb->get()->result_array();

@@ -352,6 +352,7 @@ class Hospitalconfig extends MY_Controller
 
         // Load notification helper for sending chef notifications
         $this->load->helper('notification');
+        $this->load->helper('custom');
        
         $today = date('Y-m-d');
 
@@ -367,6 +368,13 @@ class Hospitalconfig extends MY_Controller
             return;
         }
 
+        // Load AuditTrail model
+        try {
+            $this->load->model('AuditTrail_model');
+        } catch (Exception $e) {
+            log_message('error', 'dischargeSuite: Could not load AuditTrail_model: ' . $e->getMessage());
+        }
+
         // Process each person
         $updated_patients = 0;
         $updated_suites = 0;
@@ -377,8 +385,12 @@ class Hospitalconfig extends MY_Controller
                 $person_id = $person['id'];
                 $patient_name = isset($person['name']) ? $person['name'] : 'Unknown';
 
-                // Update patient status to discharged (2)
-                $patient_update = array('status' => 2, 'date_modified' => date('Y-m-d H:i:s'));
+                // Update patient status to discharged (2) WITH time_discharged
+                $patient_update = array(
+                    'status' => 2, 
+                    'date_modified' => date('Y-m-d H:i:s'),
+                    'time_discharged' => date('Y-m-d H:i:s')
+                );
                 $patient_result = $this->common_model->commonRecordUpdate('people', 'id', $person_id, $patient_update);
 
                 if ($patient_result) {
@@ -407,6 +419,32 @@ class Hospitalconfig extends MY_Controller
                     // ═══════════════════════════════════════════════════════════════════════
                     $cancelled_count = $this->cancelFutureOrdersForSuite($suite_number, $today, $patient_name);
                     $cancelled_orders += $cancelled_count;
+                    
+                    // ═══════════════════════════════════════════════════════════════════════
+                    // LOG TO AUDIT TRAIL
+                    // ═══════════════════════════════════════════════════════════════════════
+                    if (isset($this->AuditTrail_model)) {
+                        try {
+                            $suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no'], ['id' => $suite_number]);
+                            $suite_name = !empty($suite_details) ? $suite_details[0]['bed_no'] : "Suite $suite_number";
+                            
+                            $floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $person['floor_number'], 'listtype' => 'floor']);
+                            $floor_name = !empty($floor_details) ? $floor_details[0]['name'] : "Floor " . ($person['floor_number'] ?? 'N/A');
+                            
+                            $this->AuditTrail_model->logDischarge(
+                                $person_id,
+                                $patient_name,
+                                $suite_number,
+                                $suite_name,
+                                $person['floor_number'] ?? null,
+                                $floor_name,
+                                $cancelled_count,
+                                'CLI batch discharge on ' . $today
+                            );
+                        } catch (Exception $e) {
+                            log_message('error', 'dischargeSuite: Audit trail log failed for patient ' . $person_id . ': ' . $e->getMessage());
+                        }
+                    }
                     
                 } else {
                     $message = "Failed to update patient ID $person_id status";
@@ -673,6 +711,7 @@ class Hospitalconfig extends MY_Controller
      * Can be called via web interface or CLI
      */
     public function processDischarges() {
+        $this->load->helper('custom');
         $today = date('Y-m-d');
         
         // Get all active patients with discharge dates that have passed
@@ -681,6 +720,14 @@ class Hospitalconfig extends MY_Controller
         
         $processed_patients = 0;
         $processed_suites = 0;
+        $total_cancelled_orders = 0;
+        
+        // Load AuditTrail model
+        try {
+            $this->load->model('AuditTrail_model');
+        } catch (Exception $e) {
+            log_message('error', 'processDischarges: Could not load AuditTrail_model: ' . $e->getMessage());
+        }
         
         if (!empty($all_patients)) {
             foreach ($all_patients as $patient) {
@@ -690,16 +737,24 @@ class Hospitalconfig extends MY_Controller
                 if (!empty($discharge_date) && $discharge_date <= $today) {
                     $patient_id = $patient['id'];
                     $suite_number = $patient['suite_number'];
+                    $patient_name = $patient['name'] ?: 'Unknown';
                     
-                    // Update patient status to discharged
+                    // Update patient status to discharged WITH time_discharged
                     $patient_update = array(
                         'status' => 2, 
                         'date_modified' => date('Y-m-d H:i:s')
                     );
+                    
+                    // Set time_discharged if not already set
+                    if (empty($patient['time_discharged'])) {
+                        $patient_update['time_discharged'] = $discharge_date . ' 23:59:00';
+                    }
+                    
                     $patient_result = $this->common_model->commonRecordUpdate('people', 'id', $patient_id, $patient_update);
                     
                     if ($patient_result) {
                         $processed_patients++;
+                        $cancelled_count = 0;
                         
                         // Update suite to vacant if patient was in a suite
                         if (!empty($suite_number)) {
@@ -709,13 +764,65 @@ class Hospitalconfig extends MY_Controller
                             if ($suite_result) {
                                 $processed_suites++;
                             }
+                            
+                            // Cancel future orders for this suite
+                            $suite_details = $this->common_model->fetchRecordsDynamically('suites', ['bed_no'], ['id' => $suite_number]);
+                            $suite_name = !empty($suite_details) ? $suite_details[0]['bed_no'] : "Suite $suite_number";
+                            
+                            // Find and cancel all active order items for this suite (today + future)
+                            $this->tenantDb->select('opo.id');
+                            $this->tenantDb->from('orders_to_patient_options opo');
+                            $this->tenantDb->join('orders o', 'o.order_id = opo.order_id', 'inner');
+                            $this->tenantDb->where('opo.bed_id', $suite_number);
+                            $this->tenantDb->where('opo.is_cancelled', 0);
+                            $this->tenantDb->where('o.date >=', $today);
+                            $items_query = $this->tenantDb->get();
+                            
+                            if ($items_query && $items_query->num_rows() > 0) {
+                                $item_ids = array_column($items_query->result_array(), 'id');
+                                
+                                $cancel_data = array(
+                                    'is_cancelled' => 1,
+                                    'cancel_reason' => 'patient_discharged',
+                                    'cancelled_at' => date('Y-m-d H:i:s'),
+                                    'cancelled_by' => null,
+                                    'patient_name_snapshot' => $patient_name,
+                                    'suite_name_snapshot' => $suite_name
+                                );
+                                
+                                $this->tenantDb->where_in('id', $item_ids);
+                                $this->tenantDb->update('orders_to_patient_options', $cancel_data);
+                                $cancelled_count = $this->tenantDb->affected_rows();
+                                $total_cancelled_orders += $cancelled_count;
+                            }
+                            
+                            // Log to audit trail
+                            if (isset($this->AuditTrail_model)) {
+                                try {
+                                    $floor_details = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $patient['floor_number'], 'listtype' => 'floor']);
+                                    $floor_name = !empty($floor_details) ? $floor_details[0]['name'] : "Floor " . ($patient['floor_number'] ?? 'N/A');
+                                    
+                                    $this->AuditTrail_model->logDischarge(
+                                        $patient_id,
+                                        $patient_name,
+                                        $suite_number,
+                                        $suite_name,
+                                        $patient['floor_number'] ?? null,
+                                        $floor_name,
+                                        $cancelled_count,
+                                        'Processed discharge: date=' . $discharge_date . ', orders cancelled=' . $cancelled_count
+                                    );
+                                } catch (Exception $e) {
+                                    log_message('error', 'processDischarges: Audit log failed for patient ' . $patient_id . ': ' . $e->getMessage());
+                                }
+                            }
                         }
                     }
                 }
             }
         }
         
-        $message = "Processed discharges: $processed_patients patients discharged, $processed_suites suites made vacant";
+        $message = "Processed discharges: $processed_patients patients discharged, $processed_suites suites made vacant, $total_cancelled_orders orders cancelled";
         
         // Check if this is a CLI call or web request
         if (is_cli()) {
