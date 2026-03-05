@@ -1943,5 +1943,356 @@ function showFilterFeedback(day, meal) {
             scheduleLateOrderChecks();
         }
 
+        // ============================================
+        // ROOM TRANSFER NOTIFICATION SYSTEM
+        // ============================================
+        
+        // Check for room transfers and show alert
+        async function checkAndShowRoomTransfers() {
+            // Don't show if late order modal is already visible
+            const lateOrderModal = document.getElementById('late-order-alert-modal');
+            if (lateOrderModal && lateOrderModal.offsetParent !== null) {
+                console.log('⏸️ Skipping room transfer check - late order modal visible');
+                return;
+            }
+            
+            // Don't show if transfer modal is already visible
+            const existingModal = document.getElementById('room-transfer-alert-modal');
+            if (existingModal && existingModal.offsetParent !== null) {
+                console.log('⏸️ Skipping room transfer check - modal already visible');
+                return;
+            }
+            
+            fetch('<?php echo base_url('Orderportal/Order/checkRoomTransfers'); ?>', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.hasTransfers && data.transfers.length > 0) {
+                    console.log('🔄 Room transfers detected:', data.transfers.length);
+                    showRoomTransferAlert(data.transfers);
+                }
+            })
+            .catch(error => {
+                console.error('Error checking room transfers:', error);
+            });
+        }
+
+        // Show flashing alert with sound for room transfers
+        function showRoomTransferAlert(transfers) {
+            // Check if modal already exists and is visible
+            const existingModal = document.getElementById('room-transfer-alert-modal');
+            if (existingModal && existingModal.offsetParent !== null) {
+                console.log('⏭️ Room transfer alert modal already visible, skipping');
+                return;
+            }
+            
+            // Remove any stale modal
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Create audio context for alert sound
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            let alertOscillator = null;
+            let alertGainNode = null;
+            let alertAnimationFrame = null;
+            let alertStartTime = null;
+            let voiceInterval = null;
+            
+            function startAlertSound() {
+                alertOscillator = audioContext.createOscillator();
+                alertGainNode = audioContext.createGain();
+                
+                alertOscillator.connect(alertGainNode);
+                alertGainNode.connect(audioContext.destination);
+                
+                alertOscillator.type = 'sine';
+                alertGainNode.gain.value = 0.2;
+                
+                alertStartTime = audioContext.currentTime;
+                alertOscillator.start();
+                
+                // Create a "ding-dong" doorbell-like sound pattern
+                function updateAlertFrequency() {
+                    if (!alertOscillator) return;
+                    
+                    const currentTime = audioContext.currentTime - alertStartTime;
+                    const cycleTime = currentTime % 1.5; // 1.5 second cycle
+                    let frequency;
+                    
+                    if (cycleTime < 0.3) {
+                        // High note (ding)
+                        frequency = 880; // A5
+                    } else if (cycleTime < 0.6) {
+                        // Low note (dong)
+                        frequency = 659; // E5
+                    } else if (cycleTime < 0.9) {
+                        // High note again
+                        frequency = 880;
+                    } else {
+                        // Pause
+                        frequency = 0;
+                        alertGainNode.gain.value = 0;
+                    }
+                    
+                    if (frequency > 0) {
+                        alertGainNode.gain.value = 0.2;
+                    }
+                    alertOscillator.frequency.setValueAtTime(frequency || 20, audioContext.currentTime);
+                    alertAnimationFrame = requestAnimationFrame(updateAlertFrequency);
+                }
+                
+                updateAlertFrequency();
+            }
+            
+            function speakTransfer() {
+                if ('speechSynthesis' in window) {
+                    const utterance = new SpeechSynthesisUtterance('Room transfer');
+                    utterance.volume = 0.8;
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1.0;
+                    const voices = speechSynthesis.getVoices();
+                    const preferredVoice = voices.find(voice => 
+                        voice.name.includes('Female') || 
+                        voice.name.includes('Karen') || 
+                        voice.name.includes('Samantha')
+                    ) || voices.find(voice => voice.lang.startsWith('en'));
+                    if (preferredVoice) {
+                        utterance.voice = preferredVoice;
+                    }
+                    speechSynthesis.speak(utterance);
+                }
+            }
+            
+            function startVoiceAnnouncement() {
+                speakTransfer();
+                voiceInterval = setInterval(speakTransfer, 4000);
+            }
+            
+            function stopAlertSound() {
+                if (alertAnimationFrame) {
+                    cancelAnimationFrame(alertAnimationFrame);
+                    alertAnimationFrame = null;
+                }
+                if (alertOscillator) {
+                    try { alertOscillator.stop(); } catch(e) {}
+                    alertOscillator = null;
+                }
+                if (alertGainNode) {
+                    try { alertGainNode.disconnect(); } catch(e) {}
+                    alertGainNode = null;
+                }
+                if (voiceInterval) {
+                    clearInterval(voiceInterval);
+                    voiceInterval = null;
+                }
+                if ('speechSynthesis' in window) {
+                    speechSynthesis.cancel();
+                }
+            }
+            
+            // Start alert sound
+            startAlertSound();
+            
+            // Start voice announcement
+            if ('speechSynthesis' in window) {
+                if (speechSynthesis.onvoiceschanged !== undefined) {
+                    speechSynthesis.onvoiceschanged = () => startVoiceAnnouncement();
+                } else {
+                    startVoiceAnnouncement();
+                }
+            }
+            
+            // Build transfer list HTML
+            let transferListHTML = `
+                <div style="margin-bottom: 20px;">
+                    <div style="background: #2563eb; color: white; padding: 12px; border-radius: 8px; font-size: 18px; font-weight: bold; margin-bottom: 12px; text-align: center;">
+                        🔄 ${transfers.length} ROOM TRANSFER${transfers.length > 1 ? 'S' : ''} DETECTED
+                    </div>
+                    ${transfers.map(transfer => `
+                        <div style="background: #dbeafe; border: 2px solid #2563eb; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                                <div style="background: #fee2e2; padding: 12px 20px; border-radius: 8px; text-align: center; border: 2px solid #dc2626;">
+                                    <div style="font-size: 12px; color: #dc2626; font-weight: bold;">FROM</div>
+                                    <div style="font-size: 24px; font-weight: bold; color: #dc2626;">${transfer.from_suite}</div>
+                                </div>
+                                <div style="font-size: 32px; margin: 0 20px; color: #2563eb;">➜</div>
+                                <div style="background: #dcfce7; padding: 12px 20px; border-radius: 8px; text-align: center; border: 2px solid #16a34a;">
+                                    <div style="font-size: 12px; color: #16a34a; font-weight: bold;">TO</div>
+                                    <div style="font-size: 24px; font-weight: bold; color: #16a34a;">${transfer.to_suite}</div>
+                                </div>
+                            </div>
+                            <div style="background: white; padding: 10px; border-radius: 6px; text-align: center;">
+                                <div style="font-size: 16px; color: #1f2937;">
+                                    <strong>👤 Patient:</strong> ${transfer.patient_name}
+                                </div>
+                                ${transfer.orders_count > 0 ? `
+                                    <div style="font-size: 14px; color: #059669; margin-top: 6px;">
+                                        <strong>📋 ${transfer.orders_count} meal order(s)</strong> transferred to new room
+                                    </div>
+                                ` : ''}
+                                <div style="font-size: 12px; color: #6b7280; margin-top: 6px;">
+                                    Transfer Time: ${transfer.time}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.id = 'room-transfer-alert-modal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.85);
+                z-index: 99999;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                animation: flashBackgroundBlue 1s infinite;
+            `;
+            
+            // Create modal content
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                border-radius: 16px;
+                padding: 32px;
+                max-width: 600px;
+                width: 90%;
+                max-height: 85vh;
+                overflow-y: auto;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                animation: pulseScaleBlue 1s infinite;
+            `;
+            
+            modalContent.innerHTML = `
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <div style="font-size: 64px; margin-bottom: 16px; animation: shakeBlue 0.5s infinite;">🔄</div>
+                    <h1 style="font-size: 32px; font-weight: bold; color: #2563eb; margin: 0; text-transform: uppercase;">
+                        ROOM TRANSFER ALERT!
+                    </h1>
+                    <p style="font-size: 16px; color: #666; margin-top: 8px;">
+                        Patient moved to a different room - Orders have been updated
+                    </p>
+                </div>
+                
+                ${transferListHTML}
+                
+                <div style="text-align: center; margin-top: 24px;">
+                    <button id="dismiss-room-transfers-btn" style="
+                        background: #2563eb;
+                        color: white;
+                        border: none;
+                        padding: 16px 48px;
+                        border-radius: 8px;
+                        font-size: 18px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                        transition: all 0.3s;
+                    ">
+                        ✓ OK - I'VE NOTED THE ROOM TRANSFER
+                    </button>
+                </div>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Add animations
+            const style = document.createElement('style');
+            style.id = 'room-transfer-modal-styles';
+            style.textContent = `
+                @keyframes flashBackgroundBlue {
+                    0%, 100% { background: rgba(0, 0, 0, 0.85); }
+                    50% { background: rgba(37, 99, 235, 0.3); }
+                }
+                
+                @keyframes pulseScaleBlue {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.02); }
+                }
+                
+                @keyframes shakeBlue {
+                    0%, 100% { transform: rotate(0deg); }
+                    25% { transform: rotate(-15deg); }
+                    75% { transform: rotate(15deg); }
+                }
+                
+                #dismiss-room-transfers-btn:hover {
+                    background: #1d4ed8 !important;
+                    transform: scale(1.05);
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Collect transfer IDs for dismissal
+            const transferIds = transfers.map(t => t.id);
+            
+            // Handle dismiss button
+            document.getElementById('dismiss-room-transfers-btn').addEventListener('click', async function() {
+                // Stop the alert sound
+                stopAlertSound();
+                
+                // Dismiss transfers in database
+                try {
+                    await fetch('<?php echo base_url('Orderportal/Order/dismissRoomTransfers'); ?>', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'transfer_ids=' + encodeURIComponent(transferIds.join(','))
+                    });
+                } catch(e) {
+                    console.error('Error dismissing transfers:', e);
+                }
+                
+                // Remove modal and style
+                modal.remove();
+                const modalStyle = document.getElementById('room-transfer-modal-styles');
+                if (modalStyle) modalStyle.remove();
+                
+                console.log('✅ Room transfer alert dismissed');
+            });
+        }
+
+        // ✅ Check for room transfers on page load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(checkAndShowRoomTransfers, 3000); // Check 3 seconds after page load
+            });
+        } else {
+            setTimeout(checkAndShowRoomTransfers, 3000);
+        }
+
+        // ✅ Schedule room transfer checks every 1 minute
+        function scheduleRoomTransferChecks() {
+            const checkInterval = 60 * 1000; // 1 minute
+            setInterval(function() {
+                // Only check if no modals are visible
+                const lateOrderModal = document.getElementById('late-order-alert-modal');
+                const transferModal = document.getElementById('room-transfer-alert-modal');
+                
+                if ((!lateOrderModal || !lateOrderModal.offsetParent) && 
+                    (!transferModal || !transferModal.offsetParent)) {
+                    checkAndShowRoomTransfers();
+                }
+            }, checkInterval);
+            console.log('✅ Room transfer checks enabled (checking every 1 minute)');
+        }
+
+        // Initialize room transfer checks
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', scheduleRoomTransferChecks);
+        } else {
+            scheduleRoomTransferChecks();
+        }
+
     </script>
 </body></html>

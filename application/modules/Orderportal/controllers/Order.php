@@ -6210,6 +6210,123 @@ class Order extends MY_Controller
         }
     }
     
+    /**
+     * Check for recent room transfers to alert kitchen staff
+     * Returns transfers from the last 30 minutes that haven't been dismissed
+     * Called via AJAX from chef dashboard
+     */
+    public function checkRoomTransfers() {
+        try {
+            // Get current Australian time
+            $australiaTime = new DateTime('now', new DateTimeZone('Australia/Sydney'));
+            $currentDate = $australiaTime->format('Y-m-d');
+            
+            // Get transfers from the last 2 hours (for orders with meals transferred)
+            $lookbackMinutes = 120; // 2 hours lookback
+            $lookbackTime = clone $australiaTime;
+            $lookbackTime->modify("-{$lookbackMinutes} minutes");
+            
+            // Query Global_notification for room transfer notifications
+            // Format: "Suite Transfer: X order(s) transferred from X to Y for patient Z"
+            // Also check: "🔄 Room Transfer: Patient 'X' moved from Y to Z. N meal order(s) updated."
+            $query = "SELECT id, title, descr, date, time, notification_type, status
+                      FROM Global_notification 
+                      WHERE (title LIKE '%Suite Transfer:%' OR title LIKE '%Room Transfer:%')
+                      AND date = ?
+                      AND status = 1
+                      ORDER BY id DESC
+                      LIMIT 10";
+            
+            $result = $this->tenantDb->query($query, [$currentDate]);
+            $transfers = $result ? $result->result_array() : [];
+            
+            // Parse transfer details from notification messages
+            $parsedTransfers = [];
+            foreach ($transfers as $transfer) {
+                $msg = $transfer['title'];
+                $parsed = [
+                    'id' => $transfer['id'],
+                    'message' => $msg,
+                    'time' => $transfer['time'],
+                    'from_suite' => '',
+                    'to_suite' => '',
+                    'patient_name' => '',
+                    'orders_count' => 0
+                ];
+                
+                // Parse "Suite Transfer: X order(s) transferred from {from} to {to} for patient {name}"
+                if (preg_match('/from\s+([^\s]+)\s+to\s+([^\s]+)\s+for\s+patient\s+(.+)$/i', $msg, $matches)) {
+                    $parsed['from_suite'] = $matches[1];
+                    $parsed['to_suite'] = $matches[2];
+                    $parsed['patient_name'] = $matches[3];
+                }
+                
+                // Parse order count
+                if (preg_match('/(\d+)\s+order\(s\)/i', $msg, $countMatches)) {
+                    $parsed['orders_count'] = (int)$countMatches[1];
+                }
+                if (preg_match('/(\d+)\s+meal\s+order/i', $msg, $countMatches)) {
+                    $parsed['orders_count'] = (int)$countMatches[1];
+                }
+                
+                // Also parse "🔄 Room Transfer: Patient 'X' moved from Y to Z."
+                if (preg_match("/Patient\s+'([^']+)'\s+moved\s+from\s+([^\s]+)\s+to\s+([^\s.]+)/i", $msg, $matches)) {
+                    $parsed['patient_name'] = $matches[1];
+                    $parsed['from_suite'] = $matches[2];
+                    $parsed['to_suite'] = $matches[3];
+                }
+                
+                if (!empty($parsed['from_suite']) && !empty($parsed['to_suite'])) {
+                    $parsedTransfers[] = $parsed;
+                }
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'hasTransfers' => !empty($parsedTransfers),
+                'transfers' => $parsedTransfers,
+                'currentTime' => $australiaTime->format('g:i A')
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'hasTransfers' => false,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
+    /**
+     * Dismiss room transfer notifications
+     * Called via AJAX when kitchen staff acknowledges the transfer
+     */
+    public function dismissRoomTransfers() {
+        try {
+            $transferIds = $this->input->post('transfer_ids');
+            
+            if (empty($transferIds)) {
+                echo json_encode(['success' => false, 'message' => 'No transfer IDs provided']);
+                return;
+            }
+            
+            // Mark notifications as read (status = 0)
+            $this->load->helper('notification');
+            markNotificationAsRead($this->tenantDb, $transferIds);
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Room transfers acknowledged'
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
 }
     
     ?>
