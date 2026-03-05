@@ -290,22 +290,21 @@ class Ion_auth_model extends CI_Model
 	 */
 	public function hash_password($password, $identity = NULL)
 	{
-		// ═══════════════════════════════════════════════════════════════════════
-		// PLAIN TEXT MODE: Store passwords as plain text (no hashing/encryption)
-		// ═══════════════════════════════════════════════════════════════════════
-		
-		// Trim password to remove any trailing/leading spaces
-		$password = trim($password);
-		
 		// Check for empty password or password containing null char
 		if (empty($password) || strpos($password, "\0") !== FALSE)
 		{
-			log_message('error', "PASSWORD VALIDATION FAILED: Invalid password. Identity={$identity}, Empty=" . (empty($password) ? 'Yes' : 'No') . ", Timestamp=" . date('Y-m-d H:i:s'));
 			return FALSE;
 		}
-		
-		// Return plain text password (no hashing)
-		return $password;
+
+		$algo = $this->_get_hash_algo();
+		$params = $this->_get_hash_parameters();
+
+		if ($algo !== FALSE && $params !== FALSE)
+		{
+			return password_hash($password, $algo, $params);
+		}
+
+		return FALSE;
 	}
 
 	/**
@@ -321,28 +320,13 @@ class Ion_auth_model extends CI_Model
 	 */
 	public function verify_password($password, $hash_password_db, $identity = NULL)
 	{
-		// ═══════════════════════════════════════════════════════════════════════
-		// PLAIN TEXT MODE: Simple string comparison (no hashing/encryption)
-		// ═══════════════════════════════════════════════════════════════════════
-		
-		// Trim user input password (removes accidental spaces from user typing)
-		$password = trim($password);
-		
-		// Trim password from database for comparison
-		$hash_password_db = trim($hash_password_db);
-		
 		// Check for empty inputs
 		if (empty($password) || empty($hash_password_db))
 		{
-			log_message('warning', "⚠️ VERIFY_PASSWORD FAILED: Invalid inputs. Identity={$identity}, Input Password=" . ($password ?: 'EMPTY') . ", DB Password=" . ($hash_password_db ? substr($hash_password_db, 0, 3) . '***' : 'EMPTY'));
 			return FALSE;
 		}
-		
-		// Simple string comparison (plain text mode)
-		$result = ($password === $hash_password_db);
-		// Log detailed password comparison for debugging
-		log_message('info', "🔐 PASSWORD VERIFY RESULT: Identity={$identity}, Input Password={$password}, DB Password={$hash_password_db}, Match=" . ($result ? 'YES ✓' : 'NO ✗'));
-		return $result;
+
+		return password_verify($password, $hash_password_db);
 	}
 
 	/**
@@ -980,12 +964,6 @@ class Ion_auth_model extends CI_Model
 		if ($query->num_rows() === 1)
 		{
 			$user = $query->row();
-			
-			// ═══════════════════════════════════════════════════════════════════════
-			// PLAIN TEXT MODE: Simple password verification (no hash validation)
-			// ═══════════════════════════════════════════════════════════════════════
-			// Log credentials for debugging login issues
-			log_message('info', "🔑 LOGIN ATTEMPT: Identity={$identity}, Password=" . ($password ?: 'EMPTY') . ", User ID={$user->id}, DB Password=" . ($user->password ? substr($user->password, 0, 3) . '***' : 'EMPTY'));
 
 			if ($this->verify_password($password, $user->password, $identity))
 			{
