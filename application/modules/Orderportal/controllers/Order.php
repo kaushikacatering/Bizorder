@@ -2351,12 +2351,19 @@ class Order extends MY_Controller
     
   
     // production form
-    public function viewProductionForm($selectedDate = '') {
+    public function viewProductionForm($selectedDate = '', $departmentId = null) {
     
         
         // CRITICAL FIX: Use Australia/Sydney timezone for date operations
         // Check if auto-print is requested - if so, default to TOMORROW's date
         $autoPrint = $this->input->get('autoPrint') === 'true';
+        
+        // Check for department filter via GET parameter (for Staff Portal) or URL parameter
+        if (empty($departmentId)) {
+            $departmentId = $this->input->get('dept');
+        }
+        // Validate departmentId - must be numeric or null
+        $departmentId = (!empty($departmentId) && is_numeric($departmentId)) ? (int)$departmentId : null;
         
         if (empty($selectedDate)) {
             // If auto-print is requested, default to TOMORROW's orders (not today's)
@@ -2370,9 +2377,10 @@ class Order extends MY_Controller
             $selectedDate = $this->getAustraliaDate($selectedDate);
         }
         
-        $ordersItemInfo = $this->order_model->fetchOrderForChef($selectedDate);
+        // Pass departmentId to model methods for filtering
+        $ordersItemInfo = $this->order_model->fetchOrderForChef($selectedDate, null, $departmentId);
         // Fetch suite + people summary (special instructions)
-       $data['suiteSummary'] = $this->order_model->getSuiteSummary();
+       $data['suiteSummary'] = $this->order_model->getSuiteSummary($departmentId);
 
         
         // FIXED: Organize by: Category (Breakfast) > Subcategory (test, toast, condiments) > Items
@@ -2421,19 +2429,28 @@ class Order extends MY_Controller
      
              
 
-        // Fetch metrics for the selected date (consolidated across all floors)
-        $metrics = $this->getProductionFormMetrics($selectedDate);
+        // Fetch metrics for the selected date (filter by department if provided)
+        $metrics = $this->getProductionFormMetrics($selectedDate, $departmentId);
         
         // Check if viewing future date (read-only mode) - use Australia/Sydney timezone
         $todayAustralia = $this->getAustraliaDate();
         $isReadOnly = (strtotime($selectedDate) > strtotime($todayAustralia));
         
         $data['orders'] = $output;
-        $data['orderWithNotes']  = $this->order_model->fetchOrderWithOrderNotes($selectedDate);
-        $data['itemComments'] = $this->order_model->fetchItemSpecificComments($selectedDate);
+        $data['orderWithNotes']  = $this->order_model->fetchOrderWithOrderNotes($selectedDate, $departmentId);
+        $data['itemComments'] = $this->order_model->fetchItemSpecificComments($selectedDate, $departmentId);
         $data['metrics'] = $metrics;
         $data['selectedDate'] = $selectedDate;
         $data['isReadOnly'] = $isReadOnly;
+        $data['selectedDepartmentId'] = $departmentId;
+        
+        // Get department name if filtering by department
+        if (!empty($departmentId)) {
+            $deptInfo = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['name'], ['id' => $departmentId, 'listtype' => 'floor']);
+            $data['selectedDepartmentName'] = !empty($deptInfo) ? $deptInfo[0]['name'] : 'Floor ' . $departmentId;
+        } else {
+            $data['selectedDepartmentName'] = null;
+        }
         
         $conditionsC = array('is_deleted' => 0 ,'listtype' => 'category');
         $data['categories'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig','',$conditionsC);
@@ -2461,11 +2478,14 @@ class Order extends MY_Controller
             $deptParams[] = $deptId;
         }
         
-      $totalPatients = $this->tenantDb
-    ->where('is_vaccant', 0)
-    ->where('is_deleted', 0)
-    ->where('status', 1)
-    ->count_all_results('suites');
+        // Department-aware total patients count
+        $this->tenantDb->where('is_vaccant', 0);
+        $this->tenantDb->where('is_deleted', 0);
+        $this->tenantDb->where('status', 1);
+        if ($deptId !== null) {
+            $this->tenantDb->where('floor', $deptId);
+        }
+        $totalPatients = $this->tenantDb->count_all_results('suites');
 
         
         // Occupied suites for the selected date (should match total_patients)
@@ -2476,11 +2496,11 @@ class Order extends MY_Controller
         // ✅ CRITICAL FIX: Only count suites with valid suite_order_details to prevent orphaned items from inflating count
         // ✅ CRITICAL FIX: Exclude deleted suites (is_deleted = 1) and vacant suites (is_vaccant = 1)
         // ✅ CRITICAL FIX: Exclude orders from suites where patient is discharged on/before the order date
-        // ✅ FIX: Add department filter if provided
+        // ✅ FIX: Add department filter if provided (filter by suite floor, NOT order dept_id)
         $orderDeptFilter = '';
         $orderDeptParams = [];
         if ($deptId !== null) {
-            $orderDeptFilter = 'AND o.dept_id = ?';
+            $orderDeptFilter = 'AND s.floor = ?';
             $orderDeptParams[] = $deptId;
         }
         

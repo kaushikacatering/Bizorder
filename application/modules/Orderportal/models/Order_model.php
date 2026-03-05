@@ -20,7 +20,7 @@ class Order_model extends CI_Model{
 
 	}
 	
-public function getSuiteSummary()
+public function getSuiteSummary($departmentId = null)
 {
     $this->tenantDb->select('
         s.id AS suite_id,
@@ -41,6 +41,10 @@ public function getSuiteSummary()
     $this->tenantDb->where('s.is_deleted', 0);
     $this->tenantDb->where('s.is_vaccant', 0);
 
+    // Department filter
+    if (!empty($departmentId)) {
+        $this->tenantDb->where('s.floor', $departmentId);
+    }
    
     $this->tenantDb->where('p.special_instructions IS NOT NULL', null, false);
     $this->tenantDb->where("TRIM(p.special_instructions) != ''", null, false);
@@ -75,7 +79,7 @@ public function getSuiteSummary()
 
 
    
-function fetchOrderForChef($date = null, $orderId = null) {
+function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) {
     // CRITICAL FIX: Use Australia/Sydney timezone for date operations
     // Use provided date or default to today in Australia/Sydney timezone
     if (empty($date)) {
@@ -114,6 +118,12 @@ function fetchOrderForChef($date = null, $orderId = null) {
     // Join to get category name from opo.category_id (the actual meal period ordered)
     // LEFT JOIN to handle edge cases where category_id might be NULL after migration
     $this->tenantDb->join('foodmenuconfig as fmc', 'fmc.id = opo.category_id', 'LEFT');
+    
+    // Department/Floor filter: Join suites table to filter by floor
+    if (!empty($departmentId)) {
+        $this->tenantDb->join('suites as s', 's.id = opo.bed_id', 'INNER');
+        $this->tenantDb->where('s.floor', $departmentId);
+    }
 
     if ($orderId) {
         $this->tenantDb->where('opo.order_id', $orderId);
@@ -150,7 +160,7 @@ function fetchOrderForChef($date = null, $orderId = null) {
 }
 
 // FIXED: Fetch special order notes with proper date logic and better data
-   function fetchOrderWithOrderNotes($date = null){
+   function fetchOrderWithOrderNotes($date = null, $departmentId = null){
        // CRITICAL FIX: Use Australia/Sydney timezone for date operations
        // Use provided date or default to today in Australia/Sydney timezone
        if (empty($date)) {
@@ -183,7 +193,11 @@ function fetchOrderForChef($date = null, $orderId = null) {
        $this->tenantDb->join('foodmenuconfig as fmc', 'fmc.id = bd.floor', 'LEFT');
        $this->tenantDb->where('op.order_comment IS NOT NULL');
        $this->tenantDb->where('op.order_comment !=', ''); 
-       $this->tenantDb->where_in('op.order_id', $orderIds); 
+       $this->tenantDb->where_in('op.order_id', $orderIds);
+       // Department filter for legacy orders
+       if (!empty($departmentId)) {
+           $this->tenantDb->where('bd.floor', $departmentId);
+       }
        $this->tenantDb->group_by('op.bed_id');
        $legacyResults = $this->tenantDb->get()->result_array();
        
@@ -203,6 +217,10 @@ function fetchOrderForChef($date = null, $orderId = null) {
        $this->tenantDb->where('sod.order_comment !=', ''); 
        $this->tenantDb->where_in('sod.floor_order_id', $orderIds);
        $this->tenantDb->where('sod.status', 'active');
+       // Department filter for floor consolidated orders
+       if (!empty($departmentId)) {
+           $this->tenantDb->where('bd.floor', $departmentId);
+       }
        $this->tenantDb->group_by('sod.suite_id');
        $this->tenantDb->order_by('fmc.sort_order', 'ASC');
        $this->tenantDb->order_by('bd.bed_no', 'ASC');
@@ -219,7 +237,7 @@ function fetchOrderForChef($date = null, $orderId = null) {
    }
 
    // New method to fetch item-specific comments for production form
-   function fetchItemSpecificComments($date = null) {
+   function fetchItemSpecificComments($date = null, $departmentId = null) {
        // CRITICAL FIX: Use Australia/Sydney timezone for date operations
        // Use provided date or default to today in Australia/Sydney timezone
        if (empty($date)) {
@@ -263,6 +281,10 @@ function fetchOrderForChef($date = null, $orderId = null) {
            $this->tenantDb->where('DATE(mic.created_at)', $yesterdayDate);
            $this->tenantDb->where('mic.comment IS NOT NULL');
            $this->tenantDb->where('mic.comment !=', '');
+           // Department filter
+           if (!empty($departmentId)) {
+               $this->tenantDb->where('s.floor', $departmentId);
+           }
            $this->tenantDb->order_by('fmc.sort_order', 'ASC');
            $this->tenantDb->order_by('s.bed_no', 'ASC');
            
@@ -326,6 +348,10 @@ function fetchOrderForChef($date = null, $orderId = null) {
        
        $this->tenantDb->where('mic.comment IS NOT NULL');
        $this->tenantDb->where('mic.comment !=', '');
+       // Department filter
+       if (!empty($departmentId)) {
+           $this->tenantDb->where('s.floor', $departmentId);
+       }
        $this->tenantDb->order_by('fmc.sort_order', 'ASC');
        $this->tenantDb->order_by('s.bed_no', 'ASC');
        

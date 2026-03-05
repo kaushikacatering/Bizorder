@@ -83,14 +83,23 @@
         function handleProductionDateChange(newDate) {
             if (!newDate) return;
             
-            // Redirect to the production form with the new date
+            // Preserve department filter when changing date
+            <?php if (!empty($selectedDepartmentId)): ?>
+            window.location.href = '<?php echo base_url('Orderportal/Order/viewProductionForm/'); ?>' + newDate + '?dept=<?php echo $selectedDepartmentId; ?>';
+            <?php else: ?>
             window.location.href = '<?php echo base_url('Orderportal/Order/viewProductionForm/'); ?>' + newDate;
+            <?php endif; ?>
         }
     </script>
 
   <header id="header" class="bg-white border-b border-gray-200 px-6 py-4 mt-5 flex justify-between items-center">
         <div class="flex items-center">
             <h1 class="text-2xl font-bold text-gray-800"> Production Form</h1>
+            <?php if (!empty($selectedDepartmentName)): ?>
+            <span class="ml-3 px-3 py-1 bg-blue-100 text-blue-800 text-sm font-semibold rounded-full">
+                <i class="fas fa-building mr-1"></i><?php echo htmlspecialchars($selectedDepartmentName); ?>
+            </span>
+            <?php endif; ?>
             <div class="ml-6 flex items-center text-gray-600">
                 <i class="mr-2" data-fa-i2svg=""><svg class="svg-inline--fa fa-calendar" aria-hidden="true" focusable="false" data-prefix="far" data-icon="calendar" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" data-fa-i2svg=""><path fill="currentColor" d="M152 24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H64C28.7 64 0 92.7 0 128v16 48V448c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V192 144 128c0-35.3-28.7-64-64-64H344V24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H152V24zM48 192H400V448c0 8.8-7.2 16-16 16H64c-8.8 0-16-7.2-16-16V192z"></path></svg></i>
                 <span class="font-medium"><?php $this->load->helper('custom'); echo format_australia_date($selectedDate, 'l, F d, Y'); ?></span>
