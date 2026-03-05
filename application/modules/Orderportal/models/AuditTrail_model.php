@@ -35,6 +35,12 @@ class AuditTrail_model extends CI_Model {
      * @return int|bool Insert ID on success, false on failure
      */
     public function logEvent($eventType, $data) {
+        // Ensure the audit table exists before attempting to insert
+        if (!$this->ensureAuditTableExists()) {
+            log_message('error', "AUDIT LOG FAILED: Could not create/verify patient_audit_log table for {$eventType} event");
+            return false;
+        }
+        
         $this->load->helper('custom');
         
         // Get current Australia time
@@ -286,5 +292,58 @@ class AuditTrail_model extends CI_Model {
      */
     public function auditTableExists() {
         return $this->tenantDb->table_exists('patient_audit_log');
+    }
+    
+    /**
+     * Ensure patient_audit_log table exists - create if missing
+     * This is called before any insert to guarantee the table is available
+     */
+    public function ensureAuditTableExists() {
+        if ($this->tenantDb->table_exists('patient_audit_log')) {
+            return true;
+        }
+        
+        log_message('info', 'AUDIT LOG: patient_audit_log table not found. Creating table...');
+        
+        $sql = "CREATE TABLE IF NOT EXISTS `patient_audit_log` (
+            `id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `patient_id` INT(11) UNSIGNED DEFAULT NULL,
+            `patient_name` VARCHAR(255) DEFAULT NULL,
+            `event_type` VARCHAR(50) NOT NULL COMMENT 'onboarding, discharge, transfer',
+            `event_datetime` DATETIME DEFAULT NULL,
+            `event_date` DATE DEFAULT NULL,
+            `old_suite_id` INT(11) UNSIGNED DEFAULT NULL,
+            `old_suite_number` VARCHAR(100) DEFAULT NULL,
+            `old_floor_id` INT(11) UNSIGNED DEFAULT NULL,
+            `old_floor_name` VARCHAR(255) DEFAULT NULL,
+            `new_suite_id` INT(11) UNSIGNED DEFAULT NULL,
+            `new_suite_number` VARCHAR(100) DEFAULT NULL,
+            `new_floor_id` INT(11) UNSIGNED DEFAULT NULL,
+            `new_floor_name` VARCHAR(255) DEFAULT NULL,
+            `notes` TEXT DEFAULT NULL,
+            `orders_affected` INT(11) DEFAULT 0,
+            `meals_cancelled` INT(11) DEFAULT 0,
+            `created_by` INT(11) UNSIGNED DEFAULT NULL,
+            `created_by_name` VARCHAR(255) DEFAULT NULL,
+            `ip_address` VARCHAR(45) DEFAULT NULL,
+            `json_data` LONGTEXT DEFAULT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_patient_id` (`patient_id`),
+            KEY `idx_event_type` (`event_type`),
+            KEY `idx_event_date` (`event_date`),
+            KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        
+        $result = $this->tenantDb->query($sql);
+        
+        if ($result) {
+            log_message('info', 'AUDIT LOG: patient_audit_log table created successfully');
+            return true;
+        } else {
+            $error = $this->tenantDb->error();
+            log_message('error', 'AUDIT LOG: Failed to create patient_audit_log table. Error: ' . json_encode($error));
+            return false;
+        }
     }
 }

@@ -582,6 +582,8 @@ class Patient extends MY_Controller
      * Log room transfer event to audit trail
      */
     private function logTransferToAuditTrail($patientId, $patientName, $oldSuiteId, $newSuiteId, $ordersTransferred = 0) {
+        log_message('info', "AUDIT TRANSFER: Starting audit log for patient {$patientId} ({$patientName}), from suite {$oldSuiteId} to {$newSuiteId}");
+        
         try {
             $this->load->model('AuditTrail_model');
             
@@ -606,7 +608,9 @@ class Patient extends MY_Controller
                 $notes .= ". {$ordersTransferred} meal order(s) updated to new room.";
             }
             
-            $this->AuditTrail_model->logTransfer(
+            log_message('info', "AUDIT TRANSFER: Suite details - Old: {$old_suite_name} (Floor: {$old_floor_name}), New: {$new_suite_name} (Floor: {$new_floor_name})");
+            
+            $auditResult = $this->AuditTrail_model->logTransfer(
                 $patientId,
                 $patientName ?: 'Unknown',
                 $oldSuiteId,
@@ -621,13 +625,19 @@ class Patient extends MY_Controller
                 $notes
             );
             
+            if ($auditResult) {
+                log_message('info', "AUDIT TRANSFER: Successfully logged transfer to audit trail. Audit ID: {$auditResult}");
+            } else {
+                log_message('error', "AUDIT TRANSFER: logTransfer() returned false/null for patient {$patientId}");
+            }
+            
             // Also send notification to kitchen about the room transfer
             $this->load->helper('notification');
             $msg = "🔄 Room Transfer: Patient '{$patientName}' moved from {$old_suite_name} to {$new_suite_name}. {$ordersTransferred} meal order(s) updated.";
             createNotification($this->tenantDb, 1, $this->selected_location_id, 'notice', $msg);
             
         } catch (Exception $e) {
-            log_message('error', 'Failed to log transfer to audit trail: ' . $e->getMessage());
+            log_message('error', 'AUDIT TRANSFER: Exception caught - ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
         }
     }
     

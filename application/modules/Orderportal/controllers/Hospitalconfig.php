@@ -1764,6 +1764,8 @@ private function transferSuiteOrders($source_suite_id, $destination_suite_id, $p
  * (Used for drag-drop transfers on the portal page)
  */
 private function logTransferToAuditTrailFromConfig($patientId, $patientName, $oldSuiteId, $oldSuite, $newSuiteId, $newSuite, $ordersTransferred = 0) {
+    log_message('info', "AUDIT TRANSFER (Config): Starting audit log for patient {$patientId} ({$patientName}), from suite {$oldSuiteId} to {$newSuiteId}");
+    
     try {
         // Load the AuditTrail model from Orderportal module
         $this->load->model('Orderportal/AuditTrail_model', 'AuditTrail_model');
@@ -1801,7 +1803,9 @@ private function logTransferToAuditTrailFromConfig($patientId, $patientName, $ol
             $notes .= ". {$ordersTransferred} meal order(s) updated to new room.";
         }
         
-        $this->AuditTrail_model->logTransfer(
+        log_message('info', "AUDIT TRANSFER (Config): Suite details - Old: {$oldSuite['bed_no']} (Floor: {$old_floor_name}), New: {$newSuite['bed_no']} (Floor: {$new_floor_name})");
+        
+        $auditResult = $this->AuditTrail_model->logTransfer(
             $patientId,
             $patientName,
             $oldSuiteId,
@@ -1816,10 +1820,14 @@ private function logTransferToAuditTrailFromConfig($patientId, $patientName, $ol
             $notes
         );
         
-        log_message('info', "AUDIT TRAIL: Room transfer logged for patient {$patientName} from {$oldSuite['bed_no']} to {$newSuite['bed_no']}");
+        if ($auditResult) {
+            log_message('info', "AUDIT TRANSFER (Config): Successfully logged transfer to audit trail. Audit ID: {$auditResult}");
+        } else {
+            log_message('error', "AUDIT TRANSFER (Config): logTransfer() returned false/null for patient {$patientId}");
+        }
         
     } catch (Exception $e) {
-        log_message('error', 'Failed to log transfer to audit trail: ' . $e->getMessage());
+        log_message('error', 'AUDIT TRANSFER (Config): Exception caught - ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
     }
 }
 
