@@ -1178,24 +1178,18 @@ class Patient extends MY_Controller
         
         log_message('info', "ORDER TRANSFER (Patient Edit): Starting order transfer from {$source_name} (ID:{$source_suite_id}) to {$dest_name} (ID:{$destination_suite_id}) for patient '{$patient_name}'. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
         
-        // Find all orders for the source suite that are:
-        // - Today or future dates (date >= today)
-        // - Not delivered (is_delivered != 1)
-        // - Not cancelled (status != 0)
+        // ═══════════════════════════════════════════════════════════════════
+        // PART A: Find and transfer LEGACY orders (orders.bed_id = suite_id)
+        // ═══════════════════════════════════════════════════════════════════
         $this->tenantDb->where('bed_id', $source_suite_id);
         $this->tenantDb->where('date >=', $today);
         $this->tenantDb->where('status !=', 0); // Not cancelled
         $this->tenantDb->where('is_delivered !=', 1); // Not delivered
-        $orders_to_transfer = $this->tenantDb->get('orders')->result_array();
+        $legacy_orders = $this->tenantDb->get('orders')->result_array();
         
-        if (empty($orders_to_transfer)) {
-            log_message('info', "ORDER TRANSFER: No active/future orders found for {$source_name} to transfer.");
-            return 0;
-        }
+        log_message('info', "ORDER TRANSFER: Found " . count($legacy_orders) . " legacy order(s) for {$source_name}");
         
-        log_message('info', "ORDER TRANSFER: Found " . count($orders_to_transfer) . " order(s) to transfer from {$source_name} to {$dest_name}");
-        
-        foreach ($orders_to_transfer as $order) {
+        foreach ($legacy_orders as $order) {
             $order_id = $order['order_id'];
             $order_date = $order['date'];
             
@@ -1214,15 +1208,6 @@ class Patient extends MY_Controller
                 $this->tenantDb->where('bed_id', $source_suite_id);
                 $this->tenantDb->update('orders_to_comments', ['bed_id' => $destination_suite_id]);
                 
-                // Update suite_order_details - change suite_id if table exists
-                if ($this->tenantDb->table_exists('suite_order_details')) {
-                    $this->tenantDb->where('suite_id', $source_suite_id);
-                    if (!empty($order['floor_order_id'])) {
-                        $this->tenantDb->where('floor_order_id', $order['floor_order_id']);
-                    }
-                    $this->tenantDb->update('suite_order_details', ['suite_id' => $destination_suite_id]);
-                }
-                
                 // Update delivery status tables
                 if ($this->tenantDb->table_exists('orders_to_deliverystatus')) {
                     $this->tenantDb->where('order_id', $order_id);
@@ -1237,14 +1222,89 @@ class Patient extends MY_Controller
                 }
                 
                 $orders_transferred++;
-                log_message('info', "ORDER TRANSFER: Successfully transferred order ID={$order_id} (date={$order_date}) from {$source_name} to {$dest_name}");
+                log_message('info', "ORDER TRANSFER: Successfully transferred legacy order ID={$order_id} (date={$order_date}) from {$source_name} to {$dest_name}");
                 
             } catch (Exception $e) {
-                log_message('error', "ORDER TRANSFER ERROR: Failed to transfer order ID={$order_id}. Error: " . $e->getMessage());
+                log_message('error', "ORDER TRANSFER ERROR: Failed to transfer legacy order ID={$order_id}. Error: " . $e->getMessage());
             }
         }
         
-        // Create notification about the transfer
+        // ═══════════════════════════════════════════════════════════════════
+        // PART B: Find and transfer FLOOR CONSOLIDATED orders 
+        //         (suite_id is stored in suite_order_details, NOT orders.bed_id)
+        // ═══════════════════════════════════════════════════════════════════
+        if ($this->tenantDb->table_exists('suite_order_details')) {
+            // Find suite_order_details entries for the source suite
+            $query = "SELECT DISTINCT sod.id as suite_detail_id, sod.floor_order_id, o.order_id, o.date
+                      FROM suite_order_details sod
+                      INNER JOIN orders o ON o.order_id = sod.floor_order_id
+                      WHERE sod.suite_id = ?
+                      AND sod.status = 'active'
+                      AND o.date >= ?
+                      AND o.status != 0
+                      AND o.is_delivered != 1
+                      AND o.is_floor_consolidated = 1";
+            $floor_order_result = $this->tenantDb->query($query, [$source_suite_id, $today]);
+            $floor_orders = $floor_order_result->result_array();
+            
+            log_message('info', "ORDER TRANSFER: Found " . count($floor_orders) . " floor consolidated order(s) for {$source_name}");
+            
+            foreach ($floor_orders as $floor_order) {
+                $suite_detail_id = $floor_order['suite_detail_id'];
+                $floor_order_id = $floor_order['floor_order_id'];
+                $order_date = $floor_order['date'];
+                
+                try {
+                    // Update suite_order_details.suite_id - THIS IS THE CRITICAL ONE for floor orders
+                    $this->tenantDb->where('id', $suite_detail_id);
+                    $this->tenantDb->update('suite_order_details', ['suite_id' => $destination_suite_id]);
+                    
+                    // Update orders_to_patient_options - change bed_id for items linked to this suite_order_detail
+                    $this->tenantDb->where('suite_order_detail_id', $suite_detail_id);
+                    $this->tenantDb->update('orders_to_patient_options', ['bed_id' => $destination_suite_id]);
+                    
+                    // Also update by order_id + bed_id for any items that might not have suite_order_detail_id set
+                    $this->tenantDb->where('order_id', $floor_order_id);
+                    $this->tenantDb->where('bed_id', $source_suite_id);
+                    $this->tenantDb->update('orders_to_patient_options', ['bed_id' => $destination_suite_id]);
+                    
+                    // Update orders_to_comments - change bed_id
+                    $this->tenantDb->where('order_id', $floor_order_id);
+                    $this->tenantDb->where('bed_id', $source_suite_id);
+                    $this->tenantDb->update('orders_to_comments', ['bed_id' => $destination_suite_id]);
+                    
+                    // Update delivery status tables
+                    if ($this->tenantDb->table_exists('orders_to_deliverystatus')) {
+                        $this->tenantDb->where('order_id', $floor_order_id);
+                        $this->tenantDb->where('bed_id', $source_suite_id);
+                        $this->tenantDb->update('orders_to_deliverystatus', ['bed_id' => $destination_suite_id]);
+                    }
+                    
+                    if ($this->tenantDb->table_exists('orders_to_packagestatus')) {
+                        $this->tenantDb->where('order_id', $floor_order_id);
+                        $this->tenantDb->where('bed_id', $source_suite_id);
+                        $this->tenantDb->update('orders_to_packagestatus', ['bed_id' => $destination_suite_id]);
+                    }
+                    
+                    // Update menu_item_comments table if it exists
+                    if ($this->tenantDb->table_exists('menu_item_comments')) {
+                        $this->tenantDb->where('order_id', $floor_order_id);
+                        $this->tenantDb->where('bed_id', $source_suite_id);
+                        $this->tenantDb->update('menu_item_comments', ['bed_id' => $destination_suite_id]);
+                    }
+                    
+                    $orders_transferred++;
+                    log_message('info', "ORDER TRANSFER: Successfully transferred floor order (suite_detail_id={$suite_detail_id}, floor_order_id={$floor_order_id}, date={$order_date}) from {$source_name} to {$dest_name}");
+                    
+                } catch (Exception $e) {
+                    log_message('error', "ORDER TRANSFER ERROR: Failed to transfer floor order suite_detail_id={$suite_detail_id}. Error: " . $e->getMessage());
+                }
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // PART C: Send notification about the transfer
+        // ═══════════════════════════════════════════════════════════════════
         if ($orders_transferred > 0) {
             $this->load->helper('notification');
             $msg = "Suite Transfer: {$orders_transferred} order(s) transferred from {$source_name} to {$dest_name} for patient {$patient_name}";
