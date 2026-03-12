@@ -223,6 +223,7 @@ class Menuplanner extends MY_Controller {
         $data['isPublished'] = false;
       
         $data['isDailyMenuPlanner'] = true;
+        $data['isAdmin'] = $this->ion_auth->is_admin();
        
        $this->load->view('general/landingPageHeader');
       $this->load->view('Menuplanner/viewMenuPlanner',$data);
@@ -249,9 +250,13 @@ class Menuplanner extends MY_Controller {
       $publishedMenu = $this->tenantDb->get('menuPlanner')->row();
       
       if ($publishedMenu) {
-          // Published menu exists - block creation/update
-          log_message('warning', "MENU PLANNER VALIDATION FAILED: Published menu already exists for date={$date}, Menu ID={$publishedMenu->id}, Status={$publishedMenu->status}. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
-          $isValidated = false;
+          // Published menu exists - block creation/update (unless admin)
+          if (!$this->ion_auth->is_admin()) {
+              log_message('warning', "MENU PLANNER VALIDATION FAILED: Published menu already exists for date={$date}, Menu ID={$publishedMenu->id}, Status={$publishedMenu->status}. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
+              $isValidated = false;
+          } else {
+              log_message('info', "MENU PLANNER VALIDATION: Published menu exists for date={$date}, but admin can edit. Menu ID={$publishedMenu->id}. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
+          }
       } else {
           log_message('info', "MENU PLANNER VALIDATION: No published menu found for date={$date}, User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
       }
@@ -302,6 +307,9 @@ class Menuplanner extends MY_Controller {
         echo json_encode(['status' => 'error', 'message' => 'You do not have permission to save or publish menu planners.']);
         return;
     }
+    
+    // Check if user is admin — admins can edit published menu planners
+    $isAdmin = $this->ion_auth->is_admin();
       
     $deptId = $this->input->post('department_id') !== FALSE && $this->input->post('department_id') !== '' ? $this->input->post('department_id') : 0;
     
@@ -430,13 +438,16 @@ class Menuplanner extends MY_Controller {
                 
                 if(!empty($existingMenuPlanner)) {
                     // Found existing menuPlanner record FOR THIS DATE
-                    // 🔒 CRITICAL PROTECTION: Check if record is published - published records cannot be modified!
-                    if (isset($existingMenuPlanner[0]['status']) && $existingMenuPlanner[0]['status'] == 2) {
+                    // 🔒 CRITICAL PROTECTION: Check if record is published - published records cannot be modified (unless admin)
+                    if (isset($existingMenuPlanner[0]['status']) && $existingMenuPlanner[0]['status'] == 2 && !$isAdmin) {
                         log_message('error', "MENU PLANNER UPDATE BLOCKED: Record ID={$existingMenuPlanner[0]['id']} is PUBLISHED (status=2) and cannot be modified! Date={$date}. Published records are immutable. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
                         echo json_encode(['status' => 'error', 'message' => 'This menu has been published and cannot be modified. Please delete it first if you need to make changes.']);
                         return;
                     }
-                    // Record exists and is NOT published - safe to update
+                    if (isset($existingMenuPlanner[0]['status']) && $existingMenuPlanner[0]['status'] == 2 && $isAdmin) {
+                        log_message('info', "MENU PLANNER ADMIN EDIT: Admin editing PUBLISHED record ID={$existingMenuPlanner[0]['id']} for date={$date}. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
+                    }
+                    // Record exists - safe to update (admin can edit published)
                     $actualMenuPlannerRecordId = $existingMenuPlanner[0]['id'];
                     $isCreate = false;
                     log_message('info', "MENU PLANNER UPDATE MODE: Found existing record ID={$actualMenuPlannerRecordId} for date={$date} at " . australia_datetime());
@@ -455,13 +466,13 @@ class Menuplanner extends MY_Controller {
                 
                 if(!empty($freshExistingData)) {
                     // Found existing record for this specific date
-                    // 🔒 CRITICAL PROTECTION: Check if record is published - published records cannot be modified!
-                    if (isset($freshExistingData[0]['status']) && $freshExistingData[0]['status'] == 2) {
+                    // 🔒 CRITICAL PROTECTION: Check if record is published - published records cannot be modified (unless admin)
+                    if (isset($freshExistingData[0]['status']) && $freshExistingData[0]['status'] == 2 && !$isAdmin) {
                         log_message('error', "MENU PLANNER UPDATE BLOCKED: Record ID={$freshExistingData[0]['id']} is PUBLISHED (status=2) and cannot be modified! Date={$date}. Published records are immutable. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
                         echo json_encode(['status' => 'error', 'message' => 'This menu has been published and cannot be modified. Please delete it first if you need to make changes.']);
                         return;
                     }
-                    // Record exists and is NOT published - safe to update
+                    // Record exists - safe to update (admin can edit published)
                     $actualMenuPlannerRecordId = $freshExistingData[0]['id'];
                     $isCreate = false;
                     log_message('info', "MENU PLANNER UPDATE MODE: Fresh check found record ID={$actualMenuPlannerRecordId} for date={$date} at " . australia_datetime());
@@ -481,12 +492,17 @@ class Menuplanner extends MY_Controller {
                 if ($checkRecordId) {
                     $this->tenantDb->where('id', $checkRecordId);
                     $currentRecord = $this->tenantDb->get('menuPlanner')->row();
-                    if ($currentRecord && $currentRecord->status == 2) {
-                        // Record is PUBLISHED - NEVER allow status downgrade!
+                    if ($currentRecord && $currentRecord->status == 2 && !$isAdmin) {
+                        // Record is PUBLISHED - NEVER allow status downgrade (unless admin)!
                         // Published status (2) is IMMUTABLE - it can only be deleted, never changed to saved (1)
                         log_message('error', "MENU PLANNER STATUS PROTECTION: Record ID={$checkRecordId} is PUBLISHED (status=2). Attempted to update with saveType={$saveType}, but published status cannot be downgraded! Date={$currentRecord->date}, User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                         echo json_encode(['status' => 'error', 'message' => 'This menu has been published and cannot be modified. Published menus are immutable. Please delete it first if you need to make changes.']);
                         return;
+                    }
+                    if ($currentRecord && $currentRecord->status == 2 && $isAdmin) {
+                        // Admin editing published menu — keep status as published
+                        $finalStatus = 2;
+                        log_message('info', "MENU PLANNER ADMIN EDIT: Admin updating PUBLISHED record ID={$checkRecordId}. Status will remain PUBLISHED. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                     }
                     // If not published, use the saveType as-is
                     $finalStatus = $saveType;
@@ -494,11 +510,14 @@ class Menuplanner extends MY_Controller {
                     // No record ID yet - do fresh check by date
                     $freshStatusCheck = ['date' => $date, 'department_id' => $deptId, 'status !=' => 0];
                     $statusCheckData = $this->common_model->fetchRecordsDynamically('menuPlanner', ['id', 'status'], $freshStatusCheck);
-                    if (!empty($statusCheckData) && isset($statusCheckData[0]['status']) && $statusCheckData[0]['status'] == 2) {
-                        // Found published record for this date - BLOCK update
+                    if (!empty($statusCheckData) && isset($statusCheckData[0]['status']) && $statusCheckData[0]['status'] == 2 && !$isAdmin) {
+                        // Found published record for this date - BLOCK update (unless admin)
                         log_message('error', "MENU PLANNER STATUS PROTECTION: Found PUBLISHED record (ID={$statusCheckData[0]['id']}, status=2) for date={$date}. Cannot update published menus! User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                         echo json_encode(['status' => 'error', 'message' => 'A published menu already exists for this date and cannot be modified. Published menus are immutable.']);
                         return;
+                    }
+                    if (!empty($statusCheckData) && isset($statusCheckData[0]['status']) && $statusCheckData[0]['status'] == 2 && $isAdmin) {
+                        $finalStatus = 2; // Admin editing — keep status as published
                     }
                     $finalStatus = $saveType;
                 }
@@ -570,8 +589,8 @@ class Menuplanner extends MY_Controller {
                         $freshExistingData = $this->common_model->fetchRecordsDynamically('menuPlanner', '', $freshCheck);
                         
                         if(!empty($freshExistingData)) {
-                            // 🔒 CRITICAL PROTECTION: Check if record is published - published records cannot be modified!
-                            if (isset($freshExistingData[0]['status']) && $freshExistingData[0]['status'] == 2) {
+                            // 🔒 CRITICAL PROTECTION: Check if record is published - published records cannot be modified (unless admin)!
+                            if (isset($freshExistingData[0]['status']) && $freshExistingData[0]['status'] == 2 && !$isAdmin) {
                                 log_message('error', "MENU PLANNER UPDATE BLOCKED: Record ID={$freshExistingData[0]['id']} is PUBLISHED (status=2) and cannot be modified! Date={$date}. Published records are immutable. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
                                 echo json_encode(['status' => 'error', 'message' => 'This menu has been published and cannot be modified. Please delete it first if you need to make changes.']);
                                 return;
@@ -592,7 +611,7 @@ class Menuplanner extends MY_Controller {
                             // 🔒 FINAL SAFETY CHECK: Double-check status hasn't changed to published (race condition protection)
                             $this->tenantDb->where('id', $actualMenuPlannerRecordId);
                             $finalStatusCheck = $this->tenantDb->get('menuPlanner')->row();
-                            if ($finalStatusCheck && $finalStatusCheck->status == 2) {
+                            if ($finalStatusCheck && $finalStatusCheck->status == 2 && !$isAdmin) {
                                 log_message('error', "MENU PLANNER RACE CONDITION DETECTED: Status changed to PUBLISHED (2) between check and update! Record ID={$actualMenuPlannerRecordId}, Date={$date}. BLOCKING update to prevent status downgrade. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                                 echo json_encode(['status' => 'error', 'message' => 'This menu was just published and cannot be modified. Please refresh the page.']);
                                 return;
@@ -650,12 +669,18 @@ class Menuplanner extends MY_Controller {
                     return;
                 }
                 
-                // 🔒 CRITICAL PROTECTION: Published records (status = 2) CANNOT be modified!
+                // 🔒 CRITICAL PROTECTION: Published records (status = 2) CANNOT be modified (unless admin)!
                 // Published menus are immutable - they cannot be updated, only deleted
-                if ($existingRecord->status == 2) {
+                if ($existingRecord->status == 2 && !$isAdmin) {
                     log_message('error', "MENU PLANNER UPDATE BLOCKED: Record ID={$actualMenuPlannerRecordId} is PUBLISHED (status=2) and cannot be modified! Date={$existingRecord->date}. Published records are immutable. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . ", User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . ", IP=" . $this->input->ip_address() . " at " . australia_datetime());
                     echo json_encode(['status' => 'error', 'message' => 'This menu has been published and cannot be modified. Please delete it first if you need to make changes.']);
                     return;
+                }
+                if ($existingRecord->status == 2 && $isAdmin) {
+                    // Admin editing published menu — keep status as published
+                    $finalStatus = 2;
+                    $menuPlannerDataForUpdate['status'] = 2;
+                    log_message('info', "MENU PLANNER ADMIN EDIT: Admin updating PUBLISHED record ID={$actualMenuPlannerRecordId}. Status will remain PUBLISHED. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                 }
                 
                 // 🔒 CRITICAL PROTECTION: Date field is IMMUTABLE - verify it hasn't changed
@@ -682,7 +707,7 @@ class Menuplanner extends MY_Controller {
                     // 🔒 FINAL SAFETY CHECK: Double-check status hasn't changed to published (race condition protection)
                     $this->tenantDb->where('id', $actualMenuPlannerRecordId);
                     $finalStatusCheck = $this->tenantDb->get('menuPlanner')->row();
-                    if ($finalStatusCheck && $finalStatusCheck->status == 2) {
+                    if ($finalStatusCheck && $finalStatusCheck->status == 2 && !$isAdmin) {
                         log_message('error', "MENU PLANNER RACE CONDITION DETECTED: Status changed to PUBLISHED (2) between check and update! Record ID={$actualMenuPlannerRecordId}, Date={$date}. BLOCKING update to prevent status downgrade. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
                         echo json_encode(['status' => 'error', 'message' => 'This menu was just published and cannot be modified. Please refresh the page.']);
                         return;
@@ -1282,6 +1307,7 @@ public function recreateMenuPlannerMultiple() {
     //   echo "<pre>"; print_r($data['savedMenuWithOptions']);  print_r($data['savedMenuWithoutOptions']); exit;
       // Always pass the actual menuPlanner record ID for proper updates
       $data['menuPlannerRecordId'] = $savedData[0]['id']; // This is the actual menuPlanner table ID
+      $data['isAdmin'] = $this->ion_auth->is_admin();
       
       if(isset($savedData[0]['dailyMenuPlannerId']) && $savedData[0]['dailyMenuPlannerId'] !=''){
        $data['menuPlannerId'] = $savedData[0]['dailyMenuPlannerId'];

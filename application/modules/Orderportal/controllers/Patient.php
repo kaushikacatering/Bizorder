@@ -270,13 +270,12 @@ class Patient extends MY_Controller
         $onboard_timestamp = strtotime($onboard_date);
         
         // If discharge date is in the past (before today), patient should be discharged
-        // If discharge date is same as onboard date AND same as today, keep patient active for the day
-        // Only discharge if discharge date is actually in the past
         if ($discharge_timestamp < $today_timestamp) {
             $should_be_discharged = true;
         }
-        // Special case: if discharge date is today but onboard date is in the past, discharge
-        elseif ($discharge_timestamp == $today_timestamp && $onboard_timestamp < $today_timestamp) {
+        // If discharge date is today, discharge the patient
+        // (same-day time-based meal cancellation rules will apply via cancelOrdersOnDischarge)
+        elseif ($discharge_timestamp == $today_timestamp) {
             $should_be_discharged = true;
         }
     }
@@ -285,6 +284,7 @@ class Patient extends MY_Controller
         // Mark suite as vacant and patient as discharged
         $bedData['is_vaccant'] = 1;
         $save_data['status'] = 2; // Set patient status to discharged
+        $save_data['time_discharged'] = australia_datetime(); // Record exact time of discharge
     } else {
         // Mark suite as occupied (only if patient is active)
         $bedData['is_vaccant'] = 0;
@@ -379,6 +379,34 @@ class Patient extends MY_Controller
     $action = empty($person_id) ? 'onboarded' : 'updated';
     $status_text = $should_be_discharged ? 'discharged' : 'active';
     $suite_status = $should_be_discharged ? 'vacant' : 'occupied';
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // CANCEL ORDERS ON DISCHARGE: When patient is discharged via form,
+    // cancel same-day + future orders (same logic as AJAX discharge toggle)
+    // ═══════════════════════════════════════════════════════════════════
+    if ($should_be_discharged && !empty($suite_number)) {
+        $patient_id_for_cancel = !empty($person_id) ? $person_id : (isset($actionid) ? $actionid : null);
+        
+        $cancelled_count = $this->cancelOrdersOnDischarge(
+            $suite_number, 
+            $patient_name ?: 'Unknown',
+            $patient_id_for_cancel
+        );
+        
+        if ($cancelled_count > 0) {
+            log_message('info', "PATIENT DISCHARGE (FORM) - ORDERS CANCELLED: {$cancelled_count} order item(s) cancelled for suite {$suite_number} after patient discharge via onboarding form. Patient=" . ($patient_name ?: 'UNKNOWN') . ", User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
+            $status_text .= " ({$cancelled_count} order(s) cancelled)";
+        }
+        
+        // Log discharge to audit trail
+        $patient_for_audit = array(
+            'id' => $patient_id_for_cancel,
+            'name' => $patient_name ?: 'Unknown',
+            'suite_number' => $suite_number,
+            'floor_number' => $this->input->post('floor_number')
+        );
+        $this->logDischargeToAuditTrail($patient_for_audit, $cancelled_count);
+    }
     
     $this->session->set_flashdata('sucess_msg', 'Client ' . $action . ' successfully! Status: ' . $status_text . ', Suite: ' . $suite_status);
     

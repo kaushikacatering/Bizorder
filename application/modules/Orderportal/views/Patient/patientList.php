@@ -110,8 +110,13 @@
                                 </a>
                             </div>
                             <?php if($this->session->userdata('role_id') != 3) { 
-                                // Hide Remove button for nurses
+                                // Hide Remove & Discharge buttons for nurses
                             ?>
+                            <div class="discharge">
+                                <button class="btn btn-warning discharge-btn" data-rel-id="<?php echo $customer['id']; ?>" data-patient-name="<?php echo htmlspecialchars($customer['name']); ?>">
+                                    <i class="ri-logout-box-r-line label-icon align-middle fs-12 me-2"></i>Discharge
+                                </button>
+                            </div>
                             <div class="remove">
                                 <button class="btn btn btn-danger remove-item-btn" data-rel-id="<?php echo $customer['id']; ?>">
                                     <i class="ri-delete-bin-line label-icon align-middle fs-12 me-2"></i>Remove
@@ -350,17 +355,53 @@ $(document).ready(function () {
     });
 
 
-    // Discharge Toggle
-    $('.discharge-toggle').on('change', function () {
-        let patientID = $(this).attr('id');
-        let status = $(this).is(':checked') ? 'discharged' : 'active';
+    // Discharge Button
+    $('.discharge-btn').on('click', function () {
+        let patientID = $(this).data('rel-id');
+        let patientName = $(this).data('patient-name');
 
-        $.ajax({
-            type: "POST",
-            url: "<?= base_url('Orderportal/Patient/updateStatus'); ?>",
-            data: { id: patientID, status: status },
-            success: function (response) {
-                location.reload(); // Reload to reflect in correct tab
+        Swal.fire({
+            title: 'Discharge Patient?',
+            html: `Are you sure you want to discharge <strong>${patientName}</strong>?<br><br><small class="text-muted">This will set today as the discharge date, cancel future meal orders, and mark the suite as vacant.</small>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#f0ad4e',
+            confirmButtonText: 'Yes, Discharge',
+            cancelButtonText: 'Cancel',
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                $.ajax({
+                    type: "POST",
+                    url: "<?= base_url('Orderportal/Patient/updateStatus'); ?>",
+                    data: { id: patientID, status: 'discharged' },
+                    dataType: 'json',
+                    success: function (response) {
+                        if (response.status === 'success') {
+                            Swal.fire({
+                                title: 'Discharged!',
+                                text: response.message,
+                                icon: 'success',
+                                timer: 2500,
+                                showConfirmButton: false
+                            }).then(function() {
+                                location.reload();
+                            });
+                        } else {
+                            Swal.fire({
+                                title: 'Error!',
+                                text: response.message || 'Failed to discharge patient.',
+                                icon: 'error'
+                            });
+                        }
+                    },
+                    error: function () {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: 'Failed to discharge patient. Please try again.',
+                            icon: 'error'
+                        });
+                    }
+                });
             }
         });
     });

@@ -138,7 +138,7 @@ function getAllergenNames($allergenValues, $allergies) {
                          <strong>View Only Mode:</strong> You are viewing this menu planner in read-only mode. You cannot make any changes.
                      </div>
                  <?php } else { ?>
-                     <small class="text-danger fw-semibold"><i>* Once the menu is published, no further changes can be made. Please delete and add another one if any edits needs to be made to the menu.</i></small>
+                     <small class="text-danger fw-semibold"><i>* Once the menu is published, no further changes can be made<?php echo (isset($isAdmin) && $isAdmin) ? ' (except by Admin)' : ''; ?>. Please delete and add another one if any edits needs to be made to the menu.</i></small>
                  <?php } ?>           
            <!--form start-->
            
@@ -223,6 +223,11 @@ function getAllergenNames($allergenValues, $allergies) {
                                           <i class="ri-save-line align-bottom me-1"></i>Save
                                       </button>
                                   <?php } ?>
+                              <?php } else if(isset($isAdmin) && $isAdmin) { ?>
+                                  <!-- Admin can edit published menus -->
+                                  <button id="saveBtn" class="btn btn-warning" onclick="save(this,'Save')">
+                                      <i class="ri-save-line align-bottom me-1"></i>Update (Admin)
+                                  </button>
                               <?php } else { ?>
                                   <button class="btn btn-success" disabled>
                                       <i class="ri-check-line align-bottom me-1"></i>Published
@@ -494,7 +499,8 @@ document.addEventListener('DOMContentLoaded', function () {
             // Only allow submission via the save() function (AJAX)
             // This prevents accidental submissions via Enter key
             const isPublished = <?php echo (isset($isPublished) && $isPublished) ? 'true' : 'false'; ?>;
-            if (isPublished) {
+            const isAdmin = <?php echo (isset($isAdmin) && $isAdmin) ? 'true' : 'false'; ?>;
+            if (isPublished && !isAdmin) {
                 Swal.fire({
                     title: 'Error!',
                     text: 'This menu has been published and cannot be modified.',
@@ -567,7 +573,8 @@ document.addEventListener('DOMContentLoaded', function () {
   function save(obj, saveType = 'Save') {
     // 🔒 CRITICAL PROTECTION: Check if menu is published before allowing save
     const isPublished = <?php echo (isset($isPublished) && $isPublished) ? 'true' : 'false'; ?>;
-    if (isPublished) {
+    const isAdmin = <?php echo (isset($isAdmin) && $isAdmin) ? 'true' : 'false'; ?>;
+    if (isPublished && !isAdmin) {
         Swal.fire({
             title: 'Error!',
             text: 'This menu has been published and cannot be modified. Please delete it first if you need to make changes.',

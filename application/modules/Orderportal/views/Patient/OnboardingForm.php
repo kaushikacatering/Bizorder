@@ -403,9 +403,16 @@ input[type=checkbox], input[type=radio] {
                             <a href="<?php echo $backUrl; ?>"><button type="button" id="back-button" class="px-6 py-2 border-2 border-red-500 text-danger rounded-lg flex items-center hover:bg-red-50 transition-colors">
                                 <i class="fa-solid fa-arrow-left mr-2"></i> Back
                             </button></a>
-                            <button type="submit" id="submit-button" class="px-6 py-2 bg-green-600 text-white rounded-lg flex items-center hover:bg-green-700 transition-colors" style="color: white;">
-                                Submit <i class="fa-solid fa-check ml-2" style="color: white !important;"></i>
-                            </button>
+                            <div class="d-flex gap-2">
+                                <?php if (!empty($patientDetails['id']) && $patientDetails['status'] == 1 && $this->session->userdata('role_id') != 3): ?>
+                                <button type="button" id="discharge-btn" class="px-6 py-2 bg-orange-500 text-white rounded-lg flex items-center hover:bg-orange-600 transition-colors" style="background-color: #f59e0b; color: white; border: none;" data-patient-id="<?php echo $patientDetails['id']; ?>" data-patient-name="<?php echo htmlspecialchars($patientDetails['name']); ?>">
+                                    <i class="fa-solid fa-right-from-bracket mr-2" style="color: white !important;"></i> Discharge
+                                </button>
+                                <?php endif; ?>
+                                <button type="submit" id="submit-button" class="px-6 py-2 bg-green-600 text-white rounded-lg flex items-center hover:bg-green-700 transition-colors" style="color: white;">
+                                    Submit <i class="fa-solid fa-check ml-2" style="color: white !important;"></i>
+                                </button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -416,6 +423,59 @@ input[type=checkbox], input[type=radio] {
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+
+    // Discharge button handler
+    const dischargeBtn = document.getElementById('discharge-btn');
+    if (dischargeBtn) {
+        dischargeBtn.addEventListener('click', function () {
+            const patientId = this.dataset.patientId;
+            const patientName = this.dataset.patientName;
+
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'Are you sure you want to discharge this suite?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f59e0b',
+                confirmButtonText: 'Yes, Discharge',
+                cancelButtonText: 'Cancel',
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    dischargeBtn.disabled = true;
+                    dischargeBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Discharging...';
+
+                    $.ajax({
+                        type: "POST",
+                        url: "<?= base_url('Orderportal/Patient/updateStatus'); ?>",
+                        data: { id: patientId, status: 'discharged' },
+                        dataType: 'json',
+                        success: function (response) {
+                            if (response.status === 'success') {
+                                Swal.fire({
+                                    title: 'Discharged!',
+                                    text: response.message,
+                                    icon: 'success',
+                                    timer: 2500,
+                                    showConfirmButton: false
+                                }).then(function () {
+                                    window.location.href = "<?= base_url('Orderportal/Hospitalconfig/List'); ?>";
+                                });
+                            } else {
+                                dischargeBtn.disabled = false;
+                                dischargeBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket mr-2" style="color: white !important;"></i> Discharge';
+                                Swal.fire({ title: 'Error!', text: response.message || 'Failed to discharge.', icon: 'error' });
+                            }
+                        },
+                        error: function () {
+                            dischargeBtn.disabled = false;
+                            dischargeBtn.innerHTML = '<i class="fa-solid fa-right-from-bracket mr-2" style="color: white !important;"></i> Discharge';
+                            Swal.fire({ title: 'Error!', text: 'Failed to discharge. Please try again.', icon: 'error' });
+                        }
+                    });
+                }
+            });
+        });
+    }
     // Initialize date pickers
     // Check if we have existing patient data to determine date restrictions
     const hasExistingPatient = <?php echo (!empty($patientDetails) && isset($patientDetails['id'])) ? 'true' : 'false'; ?>;
