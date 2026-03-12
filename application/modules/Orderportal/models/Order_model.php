@@ -659,6 +659,11 @@ function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) 
     $this->tenantDb->where('o.date', $orderDate);
     $this->tenantDb->where('o.status', 4); // Only delivered orders
     $this->tenantDb->where('o.is_delivered', 1);
+    // Exclude cancelled order items (discharged patients)
+    $this->tenantDb->group_start();
+    $this->tenantDb->where('opo.is_cancelled', 0);
+    $this->tenantDb->or_where('opo.is_cancelled IS NULL');
+    $this->tenantDb->group_end();
     $this->tenantDb->group_by('o.date');
     
     $result = $this->tenantDb->get()->result_array();
@@ -672,6 +677,37 @@ function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) 
 //   echo $lastQuery = $this->tenantDb->last_query(); exit;
    }
    
+   /**
+    * Fetch cancelled order items for a specific order
+    * Returns cancelled items grouped by bed_id for display as 'Cancelled' in views
+    */
+   function fetchCancelledOrderItems($orderId) {
+       if (empty($orderId)) return [];
+       
+       $sql = "SELECT 
+                   opo.bed_id,
+                   opo.category_id,
+                   opo.menu_id,
+                   opo.option_id,
+                   opo.cancel_reason,
+                   opo.cancelled_at,
+                   opo.patient_name_snapshot,
+                   opo.suite_name_snapshot,
+                   fc.name as category_name,
+                   md.name as menu_name,
+                   mo.menu_option_name
+               FROM orders_to_patient_options opo
+               LEFT JOIN foodmenuconfig fc ON fc.id = opo.category_id AND fc.listtype = 'category'
+               LEFT JOIN menuDetails md ON md.id = opo.menu_id
+               LEFT JOIN menu_options mo ON mo.id = opo.option_id
+               WHERE opo.order_id = ?
+               AND opo.is_cancelled = 1
+               ORDER BY opo.bed_id, opo.category_id";
+       
+       $query = $this->tenantDb->query($sql, [$orderId]);
+       return $query ? $query->result_array() : [];
+   }
+
    function fetchmenuDetailsFromId($menuIds){
        $menuIds = array_values($menuIds);
        $this->tenantDb->select('name');
@@ -693,6 +729,11 @@ $this->tenantDb->select('o.date,
 $this->tenantDb->from('orders as o');
 $this->tenantDb->join('orders_to_patient_options as opo', 'opo.order_id = o.order_id', 'LEFT');
 $this->tenantDb->where("o.date BETWEEN '$startDate' AND '$endDate'");
+// Exclude cancelled order items (discharged patients)
+$this->tenantDb->group_start();
+$this->tenantDb->where('opo.is_cancelled', 0);
+$this->tenantDb->or_where('opo.is_cancelled IS NULL');
+$this->tenantDb->group_end();
 $this->tenantDb->group_by('o.date');
 $query = $this->tenantDb->get();
 

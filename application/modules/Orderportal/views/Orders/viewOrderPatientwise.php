@@ -1040,8 +1040,21 @@ span:not(.badge):not(.text-muted) {
                     }
                 }
             } else {
-                // No orders in this category
-                echo '<div class="text-muted text-center py-3"><i class="bx bx-minus"></i> No selection</div>';
+                // No active orders in this category - check if cancelled
+                if (isset($cancelledBedCategories[$bedList['id']][$categoryID])) {
+                    $cancelInfo = $cancelledBedCategories[$bedList['id']][$categoryID];
+                    $reason = str_replace('_', ' ', $cancelInfo['cancel_reason'] ?? 'discharged');
+                    $reason = ucwords($reason);
+                    echo '<div class="text-center py-2" style="background-color: #fff3cd; border-radius: 6px; border: 1px solid #ffc107;">';
+                    echo '<span style="color: #856404; font-weight: 600;"><i class="bx bx-x-circle"></i> Cancelled</span>';
+                    echo '<br><small style="color: #856404;">Reason: ' . htmlspecialchars($reason) . '</small>';
+                    if (!empty($cancelInfo['cancelled_at'])) {
+                        echo '<br><small style="color: #999;">' . htmlspecialchars($cancelInfo['cancelled_at']) . '</small>';
+                    }
+                    echo '</div>';
+                } else {
+                    echo '<div class="text-muted text-center py-3"><i class="bx bx-minus"></i> No selection</div>';
+                }
             }
             ?>
         </td>

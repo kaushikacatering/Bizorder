@@ -86,6 +86,7 @@ class Reports extends MY_Controller {
                 AND o.status != 0
                 AND s.is_deleted = 0
                 AND s.status = 1
+                AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
                 GROUP BY o.date
                 ORDER BY o.date ASC";
         
@@ -115,6 +116,7 @@ class Reports extends MY_Controller {
                 AND o.status != 0
                 AND s.is_deleted = 0
                 AND s.status = 1
+                AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
                 GROUP BY o.date
                 ORDER BY o.date ASC";
         

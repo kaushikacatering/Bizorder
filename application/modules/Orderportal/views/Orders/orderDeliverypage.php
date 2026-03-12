@@ -784,10 +784,24 @@ $option_html = array_map(function ($item) {
             </td>
                  
                   <?php }   ?>
-                  <?php } else { // No items - show empty cell ?>
-                  <td>
+                  <?php } else { // No items - check if cancelled ?>
+                  <td colspan="3">
                       <div class="d-flex gap-1 flex-nowrap">
+                          <?php if (isset($cancelledBedCategories[$bedList['id']][$categoryList['id']])): 
+                              $cancelInfo = $cancelledBedCategories[$bedList['id']][$categoryList['id']];
+                              $reason = str_replace('_', ' ', $cancelInfo['cancel_reason'] ?? 'discharged');
+                              $reason = ucwords($reason);
+                          ?>
+                          <div style="background-color: #fff3cd; border-radius: 6px; border: 1px solid #ffc107; padding: 6px 12px; width: 100%;">
+                              <span style="color: #856404; font-weight: 600;"><i class="mdi mdi-cancel"></i> Cancelled</span>
+                              <br><small style="color: #856404;">Reason: <?php echo htmlspecialchars($reason); ?></small>
+                              <?php if (!empty($cancelInfo['cancelled_at'])): ?>
+                              <br><small style="color: #999;"><?php echo htmlspecialchars($cancelInfo['cancelled_at']); ?></small>
+                              <?php endif; ?>
+                          </div>
+                          <?php else: ?>
                           <span class="text-muted" style="font-size: 12px; font-style: italic;">No items ordered</span>
+                          <?php endif; ?>
                       </div>
                   </td>
                   <?php } ?>

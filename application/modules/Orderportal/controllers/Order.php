@@ -450,16 +450,25 @@ class Order extends MY_Controller
                 // This ensures we show the ORIGINAL patient who was in the suite when the order was placed
                 // even if the patient has since been transferred to another suite
                 if (!empty($orderId)) {
-                    // First check if this suite has any orders with patient_id
+                    // First check if this suite has any NON-CANCELLED orders with patient_id
+                    // CRITICAL: Only consider non-cancelled items to prevent discharged patients from showing
                     $hasOrderWithPatient = $this->tenantDb->query("
+                        SELECT COUNT(*) as count
+                        FROM orders_to_patient_options opo
+                        WHERE opo.order_id = ? AND opo.bed_id = ? AND opo.patient_id IS NOT NULL
+                        AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
+                        LIMIT 1
+                    ", [$orderId, $suite['id']])->row();
+                    
+                    // Also check if there are ANY items (cancelled or not) for this bed to detect cancelled orders
+                    $hasAnyOrderItems = $this->tenantDb->query("
                         SELECT COUNT(*) as count
                         FROM orders_to_patient_options opo
                         WHERE opo.order_id = ? AND opo.bed_id = ? AND opo.patient_id IS NOT NULL
                         LIMIT 1
                     ", [$orderId, $suite['id']])->row();
                     
-                    // Only get patient from order if patient_id exists (not NULL)
-                    // If patient_id is NULL, it means no patient was there when order was placed
+                    // Only get patient from order if patient_id exists AND has non-cancelled items
                     if ($hasOrderWithPatient && $hasOrderWithPatient->count > 0) {
                         $orderPatient = $this->tenantDb->query("
                             SELECT DISTINCT p.name, p.allergies, p.dietary_preferences, p.special_instructions, 
@@ -467,15 +476,18 @@ class Order extends MY_Controller
                             FROM orders_to_patient_options opo
                             INNER JOIN people p ON p.id = opo.patient_id
                             WHERE opo.order_id = ? AND opo.bed_id = ? AND opo.patient_id IS NOT NULL
+                            AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)
                             LIMIT 1
                         ", [$orderId, $suite['id']])->row_array();
                         
                         if ($orderPatient) {
                             $activePatient = $orderPatient;
-                            // ✅ CRITICAL: Don't fall back to current patient if order has patient_id
-                            // This ensures transferred patients don't show up in old orders
+                            // CRITICAL: Don't fall back to current patient if order has patient_id
                             $skipCurrentPatientFallback = true;
                         }
+                    } elseif ($hasAnyOrderItems && $hasAnyOrderItems->count > 0) {
+                        // All items were cancelled (patient discharged) - skip this bed entirely
+                        $skipCurrentPatientFallback = true;
                     }
                 }
                 
@@ -2649,8 +2661,35 @@ class Order extends MY_Controller
     // ✅ PATIENT ID FIX: Fetch common data WITH orderId so patient info comes from order
     $result = $this->commonData($deptId, $orderId);
     
+    // Fetch cancelled order items to show "Cancelled" status in view
+    $cancelledOrderItems = [];
+    $cancelledBedCategories = [];
+    if (!empty($orderId)) {
+        $cancelledOrderItems = $this->order_model->fetchCancelledOrderItems($orderId);
+        // Build lookup: bed_id => [category_id => cancelled items info]
+        foreach ($cancelledOrderItems as $cancelled) {
+            $bedId = $cancelled['bed_id'];
+            $catId = $cancelled['category_id'];
+            if (!isset($cancelledBedCategories[$bedId])) {
+                $cancelledBedCategories[$bedId] = [];
+            }
+            if (!isset($cancelledBedCategories[$bedId][$catId])) {
+                $cancelledBedCategories[$bedId][$catId] = [
+                    'cancel_reason' => $cancelled['cancel_reason'],
+                    'cancelled_at' => $cancelled['cancelled_at'],
+                    'patient_name' => $cancelled['patient_name_snapshot'],
+                    'items' => []
+                ];
+            }
+            $cancelledBedCategories[$bedId][$catId]['items'][] = [
+                'menu_name' => $cancelled['menu_name'],
+                'option_name' => $cancelled['menu_option_name']
+            ];
+        }
+    }
+    
     // 🔒 FILTER: Show only occupied suites (suites with patients)
-    // This ensures we only display rows for suites that have patients assigned
+    // Also exclude suites where ALL orders are cancelled (patient discharged)
     $bedLists = $result['bedLists'];
     $occupiedBedLists = [];
     if (!empty($bedLists)) {
@@ -2672,15 +2711,16 @@ class Order extends MY_Controller
         'categoryListData' => $result['categoryListData'],
         'allergensData' => $allergensData,
         'cuisineData' => $cuisineData,
-        'savedMenus' => $savedMenus, // ✅ FIX: Include savedMenus
-        'selectedDepartments' => $selectedDepartments, // ✅ FIX: Include selectedDepartments
+        'savedMenus' => $savedMenus,
+        'selectedDepartments' => $selectedDepartments,
         'deptId' => $deptId,
         'date' => format_australia_date($viewDate, 'd-m-Y'),
         'viewDate' => $viewDate,
         'isTomorrow' => $isTomorrow,
         'isToday' => $isToday,
         'displayDeliveredInfo' => $displayDeliveredInfo,
-        'metrics' => $metrics // ✅ FIX: Pass metrics to view for consistent calculation
+        'metrics' => $metrics,
+        'cancelledBedCategories' => $cancelledBedCategories
     ];
     
     if (!empty($todaysOrders)) {
@@ -5087,6 +5127,29 @@ class Order extends MY_Controller
         // This ensures historical orders show the ORIGINAL patient, not the current patient in the suite
         $result = $this->commonData($deptId, $orderId);
         
+        // Fetch cancelled order items to show "Cancelled" status in view
+        $cancelledBedCategories = [];
+        $cancelledOrderItems = $this->order_model->fetchCancelledOrderItems($orderId);
+        foreach ($cancelledOrderItems as $cancelled) {
+            $bedId = $cancelled['bed_id'];
+            $catId = $cancelled['category_id'];
+            if (!isset($cancelledBedCategories[$bedId])) {
+                $cancelledBedCategories[$bedId] = [];
+            }
+            if (!isset($cancelledBedCategories[$bedId][$catId])) {
+                $cancelledBedCategories[$bedId][$catId] = [
+                    'cancel_reason' => $cancelled['cancel_reason'],
+                    'cancelled_at' => $cancelled['cancelled_at'],
+                    'patient_name' => $cancelled['patient_name_snapshot'],
+                    'items' => []
+                ];
+            }
+            $cancelledBedCategories[$bedId][$catId]['items'][] = [
+                'menu_name' => $cancelled['menu_name'],
+                'option_name' => $cancelled['menu_option_name']
+            ];
+        }
+        
         // 🔒 FILTER: Show only occupied suites (suites with patients)
         $bedLists = $result['bedLists'];
         $occupiedBedLists = [];
@@ -5180,7 +5243,8 @@ class Order extends MY_Controller
             'isHistorical' => true, // Flag to indicate this is a historical view
             'isChefView' => $isChefView, // Flag to indicate if this is chef view
             'bednNotes' => [], // Empty array for bed notes
-            'alreadyDeliveredCategoryAndPatient' => [] // Empty array for delivered items
+            'alreadyDeliveredCategoryAndPatient' => [], // Empty array for delivered items
+            'cancelledBedCategories' => $cancelledBedCategories
         ];
         
         // echo "<pre>"; print_r($data); exit;
