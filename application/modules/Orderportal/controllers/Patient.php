@@ -758,7 +758,8 @@ class Patient extends MY_Controller
         // ═══════════════════════════════════════════════════════════════════
         // STEP 2: CANCEL ALL FUTURE ORDERS (date > today)
         // ═══════════════════════════════════════════════════════════════════
-        $this->tenantDb->select('DISTINCT o.order_id, o.date');
+        $this->tenantDb->distinct();
+        $this->tenantDb->select('o.order_id, o.date');
         $this->tenantDb->from('orders o');
         $this->tenantDb->join('orders_to_patient_options opo', 'opo.order_id = o.order_id', 'inner');
         $this->tenantDb->where('o.date >', $today);
@@ -766,7 +767,8 @@ class Patient extends MY_Controller
         $this->tenantDb->where('opo.bed_id', $suite_id);
         $this->tenantDb->where('opo.is_cancelled', 0);
         
-        $future_orders = $this->tenantDb->get()->result_array();
+        $future_orders_query = $this->tenantDb->get();
+        $future_orders = ($future_orders_query) ? $future_orders_query->result_array() : array();
         
         if (!empty($future_orders)) {
             foreach ($future_orders as $order) {
