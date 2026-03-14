@@ -550,19 +550,31 @@ class Home extends MY_Controller {
        
        // Create a list of bed IDs that have orders (any buttonType - save or sendorder)
        // This shows all suites with orders, regardless of status
+       // FIXED: Exclude cancelled order items (is_cancelled = 1) so discharged patient orders don't show
        $bedsWithOrders = [];
        if (!empty($todaysOrders)) {
            foreach ($todaysOrders as $order) {
                if (!empty($order['bed_id'])) {
-                   // Legacy suite-specific orders
-                   $bedsWithOrders[] = $order['bed_id'];
+                   // Legacy suite-specific orders - only include if non-cancelled items exist
+                   $this->tenantDb->select('COUNT(*) as cnt');
+                   $this->tenantDb->from('orders_to_patient_options');
+                   $this->tenantDb->where('order_id', $order['order_id']);
+                   $this->tenantDb->where('bed_id', $order['bed_id']);
+                   $this->tenantDb->group_start();
+                   $this->tenantDb->where('is_cancelled', 0);
+                   $this->tenantDb->or_where('is_cancelled IS NULL');
+                   $this->tenantDb->group_end();
+                   $activeCnt = $this->tenantDb->get()->row()->cnt;
+                   if ($activeCnt > 0) {
+                       $bedsWithOrders[] = $order['bed_id'];
+                   }
                } elseif (!empty($order['is_floor_consolidated']) && $order['is_floor_consolidated'] == 1) {
-                   // Floor consolidated orders - ONLY get suite IDs that have actual menu items
-                   // Join with orders_to_patient_options to verify menu items exist
+                   // Floor consolidated orders - ONLY get suite IDs that have actual non-cancelled menu items
                    $query = "SELECT DISTINCT sd.suite_id 
                              FROM suite_order_details sd
                              INNER JOIN orders_to_patient_options opo ON opo.suite_order_detail_id = sd.id
-                             WHERE sd.floor_order_id = ? AND sd.status = 'active'";
+                             WHERE sd.floor_order_id = ? AND sd.status = 'active'
+                             AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)";
                    $result = $this->tenantDb->query($query, [$order['order_id']]);
                    
                    if ($result && $result->num_rows() > 0) {
@@ -1536,11 +1548,12 @@ class Home extends MY_Controller {
             
             foreach ($ordersForDate as $order) {
                 if ($order['is_floor_consolidated'] == 1) {
-                    // Floor consolidated orders - get suite IDs with actual menu items
+                    // Floor consolidated orders - get suite IDs with actual non-cancelled menu items
                     $query = "SELECT DISTINCT sd.suite_id 
                               FROM suite_order_details sd
                               INNER JOIN orders_to_patient_options opo ON opo.suite_order_detail_id = sd.id
-                              WHERE sd.floor_order_id = ? AND sd.status = 'active'";
+                              WHERE sd.floor_order_id = ? AND sd.status = 'active'
+                              AND (opo.is_cancelled = 0 OR opo.is_cancelled IS NULL)";
                     $result = $this->tenantDb->query($query, [$order['order_id']]);
                     
                     if ($result && $result->num_rows() > 0) {
@@ -1549,8 +1562,19 @@ class Home extends MY_Controller {
                         }
                     }
                 } else {
-                    // Regular orders
-                    $bedsWithOrders[] = $order['bed_id'];
+                    // Regular orders - only include if non-cancelled items exist
+                    $this->tenantDb->select('COUNT(*) as cnt');
+                    $this->tenantDb->from('orders_to_patient_options');
+                    $this->tenantDb->where('order_id', $order['order_id']);
+                    $this->tenantDb->where('bed_id', $order['bed_id']);
+                    $this->tenantDb->group_start();
+                    $this->tenantDb->where('is_cancelled', 0);
+                    $this->tenantDb->or_where('is_cancelled IS NULL');
+                    $this->tenantDb->group_end();
+                    $activeCnt = $this->tenantDb->get()->row()->cnt;
+                    if ($activeCnt > 0) {
+                        $bedsWithOrders[] = $order['bed_id'];
+                    }
                 }
             }
             
@@ -1766,11 +1790,11 @@ class Home extends MY_Controller {
                     $orderComment = $suiteOrderDetails[0]['comments'] ?? '';
                     $roomServiceEnabled = $suiteOrderDetails[0]['room_service'] == 1;
                     
-                    // Get ordered items for this suite
+                    // Get ordered items for this suite (exclude cancelled items)
                     $orderItems = $this->common_model->fetchRecordsDynamically(
                         'orders_to_patient_options',
                         '',
-                        array('suite_order_detail_id' => $suiteOrderDetailId)
+                        array('suite_order_detail_id' => $suiteOrderDetailId, 'is_cancelled' => 0)
                     );
                     
                     foreach ($orderItems as $item) {
@@ -1793,11 +1817,11 @@ class Home extends MY_Controller {
                     $orderComment = $existingOrder[0]['comments'] ?? '';
                     $roomServiceEnabled = $existingOrder[0]['room_service'] == 1;
                     
-                    // Get ordered items
+                    // Get ordered items (exclude cancelled items)
                     $orderItems = $this->common_model->fetchRecordsDynamically(
                         'orders_to_patient_options',
                         '',
-                        array('order_id' => $orderId)
+                        array('order_id' => $orderId, 'is_cancelled' => 0)
                     );
                     
                     foreach ($orderItems as $item) {

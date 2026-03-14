@@ -1746,13 +1746,10 @@ private function transferSuiteOrders($source_suite_id, $destination_suite_id, $p
     }
     
     // ═══════════════════════════════════════════════════════════════════
-    // PART C: Send notification about the transfer
+    // PART C: Notification about the transfer
+    // NOTE: Notification is NOT sent here to avoid duplicates.
+    // The calling method (transferClient) already sends a "Room Transfer" notification.
     // ═══════════════════════════════════════════════════════════════════
-    if ($orders_transferred > 0) {
-        $this->load->helper('notification');
-        $msg = "Suite Transfer: {$orders_transferred} order(s) transferred from {$source_name} to {$dest_name} for patient {$patient_name}";
-        createNotification($this->tenantDb, 1, $this->selected_location_id, 'info', $msg);
-    }
     
     log_message('info', "ORDER TRANSFER COMPLETE: Transferred {$orders_transferred} order(s) from {$source_name} to {$dest_name} for patient '{$patient_name}'");
     
