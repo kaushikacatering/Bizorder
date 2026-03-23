@@ -650,6 +650,27 @@ class Configfoodmenu extends MY_Controller
     // MENU MANAGEMENT PAGE WITH VARIATIONS
     // ═══════════════════════════════════════════════════════════════════════
 
+    /**
+     * Listing page for all variations (similar to menu_options listing)
+     */
+    public function menu_management_list() {
+        $data['title'] = 'Menu Management - Variations';
+        $data['variations'] = $this->menu_model->get_all_variations_list();
+
+        $cuisineConditions = ['listtype' => 'cuisine', 'is_deleted' => 0];
+        $data['cuisines'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $cuisineConditions, 'sort_order ASC');
+
+        $allergenConditions = ['listtype' => 'allergen', 'is_deleted' => 0];
+        $data['allergies'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $allergenConditions, 'sort_order ASC');
+
+        $this->load->view('general/header', $data);
+        $this->load->view('Menus/variationsList', $data);
+        $this->load->view('general/footer');
+    }
+
+    /**
+     * Add/Edit variations page (inline editing)
+     */
     public function menu_management() {
         $data['title'] = 'Menu Management';
 

@@ -498,6 +498,20 @@ return $query->result_array();
     }
 
     /**
+     * Get all variations joined with menu name (for the listing page)
+     */
+    public function get_all_variations_list() {
+        $this->tenantDb->select('v.*, md.name AS menu_name');
+        $this->tenantDb->from('menu_item_variations v');
+        $this->tenantDb->join('menuDetails md', 'md.id = v.menu_detail_id', 'left');
+        $this->tenantDb->where('v.is_deleted', 0);
+        $this->tenantDb->order_by('md.sort_order', 'ASC');
+        $this->tenantDb->order_by('v.sort_order', 'ASC');
+        $query = $this->tenantDb->get();
+        return $query->result_array();
+    }
+
+    /**
      * Fetch menu details along with variations (for dashboard use).
      */
     public function fetchMenuDetailsWithVariations($isDashboard = false) {
