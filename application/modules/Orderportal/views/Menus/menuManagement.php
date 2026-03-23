@@ -56,6 +56,7 @@
       <div id="variationsCard" class="card">
         <div class="card-header bg-light d-flex align-items-center justify-content-between">
           <h6 class="mb-0" id="variationsHeading">Variations</h6>
+          <button class="btn btn-sm btn-success" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line me-1"></i>Add Variation</button>
         </div>
         <div class="card-body p-0">
           <div class="table-responsive">
@@ -121,7 +122,7 @@ function loadVariations(menuDetailId) {
                 tbody.appendChild(buildStaticRow(v));
             });
         } else {
-            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click the <b>+</b> button in Actions to add one.</td></tr>';
+            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
         }
     })
     .catch(() => {
@@ -270,7 +271,7 @@ function cancelVariationRow(btn) {
     const tbody = row.closest('tbody');
     row.remove();
     if (!tbody.querySelector('.variation-row')) {
-        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click the <b>+</b> button to add one.</td></tr>';
+        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
     }
 }
 
@@ -336,7 +337,7 @@ function deleteVariation(id, btn) {
         if (data.success) {
             row.remove();
             if (!tbody.querySelector('.variation-row')) {
-                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click the <b>+</b> button to add one.</td></tr>';
+                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
             }
             showToast('Variation deleted.', 'success');
         } else {
