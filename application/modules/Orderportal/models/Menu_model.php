@@ -431,6 +431,83 @@ return $query->result_array();
         return $menu_data;
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // MENU ITEM VARIATIONS CRUD
+    // ═══════════════════════════════════════════════════════════════════════
 
-	
+    /**
+     * Get all variations for a given menu item (menuDetails.id)
+     */
+    public function get_variations_by_menu($menu_detail_id) {
+        $this->tenantDb->select('*');
+        $this->tenantDb->from('menu_item_variations');
+        $this->tenantDb->where('menu_detail_id', $menu_detail_id);
+        $this->tenantDb->where('is_deleted', 0);
+        $this->tenantDb->order_by('sort_order', 'ASC');
+        $query = $this->tenantDb->get();
+        return $query->result_array();
+    }
+
+    /**
+     * Get a single variation by ID
+     */
+    public function get_variation($id) {
+        $this->tenantDb->where('id', $id);
+        $this->tenantDb->where('is_deleted', 0);
+        $query = $this->tenantDb->get('menu_item_variations');
+        return $query->row_array();
+    }
+
+    /**
+     * Save or update a variation
+     */
+    public function save_variation($data, $id = null) {
+        if ($id) {
+            $data['date_updated'] = date('Y-m-d H:i:s');
+            $this->tenantDb->where('id', $id);
+            $this->tenantDb->update('menu_item_variations', $data);
+            return $id;
+        } else {
+            $data['date_created'] = date('Y-m-d H:i:s');
+            $this->tenantDb->insert('menu_item_variations', $data);
+            return $this->tenantDb->insert_id();
+        }
+    }
+
+    /**
+     * Soft delete a variation
+     */
+    public function delete_variation($id) {
+        $data = ['is_deleted' => 1, 'date_updated' => date('Y-m-d H:i:s')];
+        $this->tenantDb->where('id', $id);
+        $this->tenantDb->update('menu_item_variations', $data);
+        return $this->tenantDb->affected_rows() > 0;
+    }
+
+    /**
+     * Get all active menu items (for the Menu Item dropdown on management page)
+     */
+    public function get_all_menu_items_for_dropdown() {
+        $this->tenantDb->select('id, name');
+        $this->tenantDb->from('menuDetails');
+        $this->tenantDb->where('status', 1);
+        $this->tenantDb->where('is_deleted', 0);
+        $this->tenantDb->order_by('sort_order', 'ASC');
+        $query = $this->tenantDb->get();
+        return $query->result_array();
+    }
+
+    /**
+     * Fetch menu details along with variations (for dashboard use).
+     */
+    public function fetchMenuDetailsWithVariations($isDashboard = false) {
+        $results = $this->fetchMenuDetails('', $isDashboard);
+
+        foreach ($results as &$menu) {
+            $menu['variations'] = $this->get_variations_by_menu($menu['menu_id']);
+        }
+
+        return $results;
+    }
+
 }

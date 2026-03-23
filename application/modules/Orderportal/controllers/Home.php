@@ -202,7 +202,7 @@ class Home extends MY_Controller {
         $conditions['listtype'] = 'category';
         $conditions['is_deleted'] = '0';
         $data['categories']   = $this->common_model->fetchRecordsDynamically('foodmenuconfig','',$conditions);
-        $data['menuLists']    = $this->menu_model->fetchMenuDetails('',true);
+        $data['menuLists']    = $this->menu_model->fetchMenuDetailsWithVariations(true);
         
         // Fetch allergens and cuisine types for icons
         $conditionsAllergen = array('listtype' => 'allergen', 'is_deleted' => '0');
@@ -439,6 +439,10 @@ class Home extends MY_Controller {
         $conditionsC = array('is_deleted' => 0 ,'listtype' => 'category');
         $data['categoryListData'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig','',$conditionsC);
         
+        // Fetch cuisine data for variation-based filtering on dashboards
+        $conditionsCuisineN = array('listtype' => 'cuisine', 'is_deleted' => '0');
+        $data['cuisineData'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $conditionsCuisineN);
+        
         // UPDATED: Load tomorrow's menu by default
         // CRITICAL FIX: Use Australia/Sydney timezone for date operations
         // ✅ MENU IS ALWAYS COMMON FOR ALL: department_id = 0 is the common menu for all departments
@@ -447,7 +451,7 @@ class Home extends MY_Controller {
         
         $savedData = $this->common_model->fetchRecordsDynamically('menuPlanner','',$conditionsM);
        
-        $result = $this->menu_model->fetchMenuDetails('',true);
+        $result = $this->menu_model->fetchMenuDetailsWithVariations(true);
         $data['menuLists'] = $result;
         // echo "<pre>"; print_r($result); exit;
         

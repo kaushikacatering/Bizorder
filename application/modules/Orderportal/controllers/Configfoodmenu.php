@@ -646,7 +646,107 @@ class Configfoodmenu extends MY_Controller
         $writer->save('php://output');
     }
     
+    // ═══════════════════════════════════════════════════════════════════════
+    // MENU MANAGEMENT PAGE WITH VARIATIONS
+    // ═══════════════════════════════════════════════════════════════════════
 
+    public function menu_management() {
+        $data['title'] = 'Menu Management';
+
+        // Menu items for dropdown
+        $data['menuItems'] = $this->menu_model->get_all_menu_items_for_dropdown();
+
+        // Cuisine types for variation multiselect
+        $cuisineConditions = ['listtype' => 'cuisine', 'is_deleted' => 0];
+        $data['cuisines'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $cuisineConditions, 'sort_order ASC');
+
+        // Allergens for allergen dropdown
+        $allergenConditions = ['listtype' => 'allergen', 'is_deleted' => 0];
+        $data['allergies'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $allergenConditions, 'sort_order ASC');
+
+        $this->load->view('general/header', $data);
+        $this->load->view('Menus/menuManagement', $data);
+        $this->load->view('general/footer');
+    }
+
+    /**
+     * AJAX: Get variations for a menu item
+     */
+    public function get_variations() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+
+        $menu_detail_id = (int) $this->input->post('menu_detail_id');
+        if (empty($menu_detail_id)) {
+            echo json_encode(['success' => false, 'message' => 'Invalid menu item.']);
+            return;
+        }
+
+        $variations = $this->menu_model->get_variations_by_menu($menu_detail_id);
+        echo json_encode(['success' => true, 'variations' => $variations]);
+    }
+
+    /**
+     * AJAX: Save a new variation or update an existing one
+     */
+    public function save_variation() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+
+        $id = $this->input->post('id');
+        $menu_detail_id = (int) $this->input->post('menu_detail_id');
+
+        $cuisineTypeIds = $this->input->post('cuisine_type_ids');
+        $cuisineTypeIds = !empty($cuisineTypeIds) ? (is_array($cuisineTypeIds) ? json_encode($cuisineTypeIds) : $cuisineTypeIds) : json_encode([]);
+
+        $description = $this->security->xss_clean(trim($this->input->post('description')));
+        $nutritional_values = $this->security->xss_clean(trim($this->input->post('nutritional_values')));
+
+        $allergens = $this->input->post('allergenValues');
+        $allergenValues = !empty($allergens) ? (is_array($allergens) ? json_encode($allergens) : $allergens) : json_encode([]);
+
+        if (empty($menu_detail_id) || $cuisineTypeIds === json_encode([])) {
+            echo json_encode(['success' => false, 'message' => 'Menu item and at least one cuisine type are required.']);
+            return;
+        }
+
+        $data = [
+            'menu_detail_id' => $menu_detail_id,
+            'cuisine_type_ids' => $cuisineTypeIds,
+            'description' => mb_substr($description, 0, 200),
+            'nutritional_values' => mb_substr($nutritional_values, 0, 200),
+            'allergenValues' => $allergenValues
+        ];
+
+        $result = $this->menu_model->save_variation($data, $id ?: null);
+
+        if ($result) {
+            $variation = $this->menu_model->get_variation($result);
+            echo json_encode(['success' => true, 'message' => 'Variation saved.', 'variation' => $variation]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Failed to save variation.']);
+        }
+    }
+
+    /**
+     * AJAX: Delete a variation (soft delete)
+     */
+    public function delete_variation() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+
+        $id = (int) $this->input->post('id');
+        if (empty($id)) {
+            echo json_encode(['success' => false, 'message' => 'Invalid variation ID.']);
+            return;
+        }
+
+        $result = $this->menu_model->delete_variation($id);
+        echo json_encode(['success' => $result, 'message' => $result ? 'Variation deleted.' : 'Failed to delete.']);
+    }
 
 
 }

@@ -920,7 +920,30 @@
         let bedsWithOrders = <?php echo json_encode($bedsWithOrders ?? []); ?>; // Track orders dynamically
         const categoryListData = <?php echo json_encode($categoryListData ?? []); ?>;
         const menuLists = <?php echo json_encode($menuLists ?? []); ?>;
+        const cuisineData = <?php echo json_encode($cuisineData ?? []); ?>; // Cuisine types for variation filtering
         const patientOrderData = <?php echo json_encode($patientOrderData ?? []); ?>;
+        
+        // Helper: resolve cuisine IDs to names
+        function getCuisineNamesByIds(ids) {
+            if (!ids || !ids.length) return [];
+            return ids.map(id => {
+                const c = cuisineData.find(x => String(x.id) === String(id));
+                return c ? c.name : null;
+            }).filter(Boolean);
+        }
+
+        // Helper: check if any of the patient's cuisine preferences match any variation of a menu
+        function menuHasMatchingVariation(menu, patientCuisineIds) {
+            if (!menu.variations || menu.variations.length === 0) return true;
+            if (!patientCuisineIds || patientCuisineIds.length === 0) return true;
+            const patientIds = patientCuisineIds.map(String);
+            return menu.variations.some(v => {
+                try {
+                    const vCuisineIds = (typeof v.cuisine_type_ids === 'string' ? JSON.parse(v.cuisine_type_ids) : v.cuisine_type_ids) || [];
+                    return vCuisineIds.some(cid => patientIds.includes(String(cid)));
+                } catch(e) { return false; }
+            });
+        }
         
         // Close description modal function
         function closeDescriptionModal() {
@@ -2395,6 +2418,18 @@
                     if (categoryMenus.length === 0 && hasMenu) {
                         categoryMenus = menuList.filter(m => m.category_ids && m.category_ids.includes(category.id));
                     }
+
+                    // VARIATION FILTERING: If patient has dietary preferences and menus have variations,
+                    // only show menus that have a matching variation for the patient's diet
+                    const currentBed = bedLists.find(b => b.id == bedId);
+                    if (currentBed && currentBed.patient_dietary_preferences && currentBed.patient_dietary_preferences !== 'null' && currentBed.patient_dietary_preferences !== '[]') {
+                        try {
+                            const patientCuisineIds = JSON.parse(currentBed.patient_dietary_preferences);
+                            if (Array.isArray(patientCuisineIds) && patientCuisineIds.length > 0) {
+                                categoryMenus = categoryMenus.filter(m => menuHasMatchingVariation(m, patientCuisineIds));
+                            }
+                        } catch(e) { /* ignore parse errors */ }
+                    }
                     
                     if (categoryMenus.length === 0) {
                         return;
@@ -2477,6 +2512,7 @@
                                         <div class="mb-6">
                                             <h3 class="text-base font-semibold text-gray-800 flex items-center mb-4">
                                                 ${htmlspecialchars(menu.menu_name)}
+                                                ${menu.variations && menu.variations.length > 0 ? `<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">${menu.variations.map(v => { try { const ids = typeof v.cuisine_type_ids === 'string' ? JSON.parse(v.cuisine_type_ids) : v.cuisine_type_ids; return getCuisineNamesByIds(ids || []).join(', '); } catch(e){ return ''; } }).filter(Boolean).join(' | ')}</span>` : ''}
                                                 <span class="ml-2 text-sm font-normal text-gray-500" id="count-${category.id}-${menu.menu_id}">
                                                     (Choose up to ${menu.inputType === 'radio' ? 1 : menu.max_selections || 2} - Selected: 0)
                                                 </span>
