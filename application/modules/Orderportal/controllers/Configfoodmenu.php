@@ -673,6 +673,7 @@ class Configfoodmenu extends MY_Controller
      */
     public function menu_management() {
         $data['title'] = 'Menu Management';
+        $data['preselect_menu_id'] = (int) $this->input->get('menu_id');
 
         // Menu items for dropdown
         $data['menuItems'] = $this->menu_model->get_all_menu_items_for_dropdown();
@@ -709,7 +710,7 @@ class Configfoodmenu extends MY_Controller
     }
 
     /**
-     * AJAX: Save a new variation or update an existing one
+     * AJAX: Save a new menu option or update an existing one (replaces old variation save)
      */
     public function save_variation() {
         if (!$this->input->is_ajax_request()) {
@@ -718,9 +719,10 @@ class Configfoodmenu extends MY_Controller
 
         $id = $this->input->post('id');
         $menu_detail_id = (int) $this->input->post('menu_detail_id');
+        $menu_option_name = $this->security->xss_clean(trim($this->input->post('menu_option_name')));
 
         $cuisineTypeIds = $this->input->post('cuisine_type_ids');
-        $cuisineTypeIds = !empty($cuisineTypeIds) ? (is_array($cuisineTypeIds) ? json_encode($cuisineTypeIds) : $cuisineTypeIds) : json_encode([]);
+        $cuisineValues = !empty($cuisineTypeIds) ? (is_array($cuisineTypeIds) ? json_encode($cuisineTypeIds) : $cuisineTypeIds) : json_encode([]);
 
         $description = $this->security->xss_clean(trim($this->input->post('description')));
         $nutritional_values = $this->security->xss_clean(trim($this->input->post('nutritional_values')));
@@ -728,31 +730,99 @@ class Configfoodmenu extends MY_Controller
         $allergens = $this->input->post('allergenValues');
         $allergenValues = !empty($allergens) ? (is_array($allergens) ? json_encode($allergens) : $allergens) : json_encode([]);
 
-        if (empty($menu_detail_id) || $cuisineTypeIds === json_encode([])) {
+        if (empty($menu_detail_id) || $cuisineValues === json_encode([])) {
             echo json_encode(['success' => false, 'message' => 'Menu item and at least one cuisine type are required.']);
             return;
         }
 
         $data = [
-            'menu_detail_id' => $menu_detail_id,
-            'cuisine_type_ids' => $cuisineTypeIds,
-            'description' => mb_substr($description, 0, 200),
-            'nutritional_values' => mb_substr($nutritional_values, 0, 200),
-            'allergenValues' => $allergenValues
+            'menu_option_name' => $menu_option_name ?: '',
+            'cuisineValues' => $cuisineValues,
+            'description' => $description,
+            'nutritionValues' => $nutritional_values,
+            'allergenValues' => $allergenValues,
+            'location_id' => $this->selected_location_id,
+            'status' => 1,
+            'is_deleted' => 0,
         ];
 
         $result = $this->menu_model->save_variation($data, $id ?: null);
 
         if ($result) {
+            // Create link if new option
+            if (empty($id)) {
+                $this->menu_model->add_menu_option_link($menu_detail_id, $result);
+            }
             $variation = $this->menu_model->get_variation($result);
-            echo json_encode(['success' => true, 'message' => 'Variation saved.', 'variation' => $variation]);
+            echo json_encode(['success' => true, 'message' => 'Option saved.', 'variation' => $variation]);
         } else {
-            echo json_encode(['success' => false, 'message' => 'Failed to save variation.']);
+            echo json_encode(['success' => false, 'message' => 'Failed to save option.']);
         }
     }
 
     /**
-     * AJAX: Delete a variation (soft delete)
+     * AJAX: Save all menu options for a menu item at once
+     */
+    public function save_all_menu_options() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+
+        $menu_detail_id = (int) $this->input->post('menu_detail_id');
+        $menu_option_name = $this->security->xss_clean(trim($this->input->post('menu_option_name')));
+        $top_description = $this->security->xss_clean(trim($this->input->post('top_description')));
+        $variations_json = $this->input->post('variations');
+        $variations = json_decode($variations_json, true);
+
+        if (empty($menu_detail_id)) {
+            echo json_encode(['success' => false, 'message' => 'Please select a menu item.']);
+            return;
+        }
+        if (empty($variations) || !is_array($variations)) {
+            echo json_encode(['success' => false, 'message' => 'No options to save.']);
+            return;
+        }
+
+        $saved_ids = [];
+        $existing_ids = [];
+
+        // Collect existing linked option IDs first
+        $existing_options = $this->menu_model->get_variations_by_menu($menu_detail_id);
+        foreach ($existing_options as $eo) {
+            $existing_ids[] = (int)$eo['id'];
+        }
+
+        foreach ($variations as $v) {
+            $cuisineValues = !empty($v['cuisine_type_ids']) ? (is_array($v['cuisine_type_ids']) ? json_encode($v['cuisine_type_ids']) : $v['cuisine_type_ids']) : json_encode([]);
+            $allergenValues = !empty($v['allergenValues']) ? (is_array($v['allergenValues']) ? json_encode($v['allergenValues']) : $v['allergenValues']) : json_encode([]);
+
+            $data = [
+                'menu_option_name' => !empty($v['menu_option_name']) ? $this->security->xss_clean(trim($v['menu_option_name'])) : $menu_option_name,
+                'description' => !empty($v['description']) ? $this->security->xss_clean(trim($v['description'])) : $top_description,
+                'cuisineValues' => $cuisineValues,
+                'nutritionValues' => !empty($v['nutritional_values']) ? $this->security->xss_clean(trim($v['nutritional_values'])) : '',
+                'allergenValues' => $allergenValues,
+                'location_id' => $this->selected_location_id,
+                'status' => 1,
+                'is_deleted' => 0,
+            ];
+
+            $vid = !empty($v['id']) ? (int)$v['id'] : null;
+            $result = $this->menu_model->save_variation($data, $vid);
+
+            if ($result) {
+                $saved_ids[] = (int)$result;
+                if (empty($vid)) {
+                    $this->menu_model->add_menu_option_link($menu_detail_id, $result);
+                }
+            }
+        }
+
+        echo json_encode(['success' => true, 'message' => 'All options saved successfully.', 'saved_count' => count($saved_ids)]);
+    }
+
+    /**
+     * AJAX: Delete a menu option (soft delete + remove link)
      */
     public function delete_variation() {
         if (!$this->input->is_ajax_request()) {
@@ -760,13 +830,20 @@ class Configfoodmenu extends MY_Controller
         }
 
         $id = (int) $this->input->post('id');
+        $menu_detail_id = (int) $this->input->post('menu_detail_id');
         if (empty($id)) {
-            echo json_encode(['success' => false, 'message' => 'Invalid variation ID.']);
+            echo json_encode(['success' => false, 'message' => 'Invalid option ID.']);
             return;
         }
 
         $result = $this->menu_model->delete_variation($id);
-        echo json_encode(['success' => $result, 'message' => $result ? 'Variation deleted.' : 'Failed to delete.']);
+
+        // Also remove the link
+        if ($result && !empty($menu_detail_id)) {
+            $this->menu_model->remove_menu_option_link($menu_detail_id, $id);
+        }
+
+        echo json_encode(['success' => $result, 'message' => $result ? 'Option deleted.' : 'Failed to delete.']);
     }
 
 

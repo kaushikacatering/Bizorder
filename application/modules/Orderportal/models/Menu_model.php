@@ -432,56 +432,93 @@ return $query->result_array();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // MENU ITEM VARIATIONS CRUD
+    // MENU ITEM VARIATIONS / MENU OPTIONS CRUD
+    // Now saves to menu_options table and links via menu_details_to_menu_options
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Get all variations for a given menu item (menuDetails.id)
+     * Get all menu options linked to a given menu item (menuDetails.id)
+     * Aliases columns to keep JS compatibility with the old variation field names.
      */
     public function get_variations_by_menu($menu_detail_id) {
-        $this->tenantDb->select('*');
-        $this->tenantDb->from('menu_item_variations');
-        $this->tenantDb->where('menu_detail_id', $menu_detail_id);
-        $this->tenantDb->where('is_deleted', 0);
-        $this->tenantDb->order_by('sort_order', 'ASC');
+        $this->tenantDb->select('mo.id, mo.menu_option_name, mo.description,
+            mo.cuisineValues AS cuisine_type_ids,
+            mo.nutritionValues AS nutritional_values,
+            mo.allergenValues,
+            mo.is_special_item');
+        $this->tenantDb->from('menu_options mo');
+        $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id');
+        $this->tenantDb->where('mdto.main_menu_id', $menu_detail_id);
+        $this->tenantDb->where('mo.status', 1);
+        $this->tenantDb->where('mo.is_deleted', 0);
+        $this->tenantDb->order_by('mo.id', 'ASC');
         $query = $this->tenantDb->get();
         return $query->result_array();
     }
 
     /**
-     * Get a single variation by ID
+     * Get a single menu option by ID (aliased for variation compatibility)
      */
     public function get_variation($id) {
+        $this->tenantDb->select('id, menu_option_name, description,
+            cuisineValues AS cuisine_type_ids,
+            nutritionValues AS nutritional_values,
+            allergenValues,
+            is_special_item');
         $this->tenantDb->where('id', $id);
         $this->tenantDb->where('is_deleted', 0);
-        $query = $this->tenantDb->get('menu_item_variations');
+        $query = $this->tenantDb->get('menu_options');
         return $query->row_array();
     }
 
     /**
-     * Save or update a variation
+     * Save or update a menu option (used by the menu management page)
      */
     public function save_variation($data, $id = null) {
         if ($id) {
             $data['date_updated'] = date('Y-m-d H:i:s');
             $this->tenantDb->where('id', $id);
-            $this->tenantDb->update('menu_item_variations', $data);
+            $this->tenantDb->update('menu_options', $data);
             return $id;
         } else {
             $data['date_created'] = date('Y-m-d H:i:s');
-            $this->tenantDb->insert('menu_item_variations', $data);
+            $this->tenantDb->insert('menu_options', $data);
             return $this->tenantDb->insert_id();
         }
     }
 
     /**
-     * Soft delete a variation
+     * Soft delete a menu option
      */
     public function delete_variation($id) {
         $data = ['is_deleted' => 1, 'date_updated' => date('Y-m-d H:i:s')];
         $this->tenantDb->where('id', $id);
-        $this->tenantDb->update('menu_item_variations', $data);
+        $this->tenantDb->update('menu_options', $data);
         return $this->tenantDb->affected_rows() > 0;
+    }
+
+    /**
+     * Add a link between a menu item and a menu option (if not already linked)
+     */
+    public function add_menu_option_link($menu_detail_id, $menu_option_id) {
+        $existing = $this->tenantDb->where('main_menu_id', $menu_detail_id)
+            ->where('menu_option_id', $menu_option_id)
+            ->get('menu_details_to_menu_options')->row();
+        if (!$existing) {
+            $this->tenantDb->insert('menu_details_to_menu_options', [
+                'main_menu_id' => (int)$menu_detail_id,
+                'menu_option_id' => (int)$menu_option_id
+            ]);
+        }
+    }
+
+    /**
+     * Remove a link between a menu item and a menu option
+     */
+    public function remove_menu_option_link($menu_detail_id, $menu_option_id) {
+        $this->tenantDb->where('main_menu_id', $menu_detail_id);
+        $this->tenantDb->where('menu_option_id', $menu_option_id);
+        $this->tenantDb->delete('menu_details_to_menu_options');
     }
 
     /**
@@ -498,21 +535,28 @@ return $query->result_array();
     }
 
     /**
-     * Get all variations joined with menu name (for the listing page)
+     * Get all menu options joined with their linked menu names (for the listing page)
      */
     public function get_all_variations_list() {
-        $this->tenantDb->select('v.*, md.name AS menu_name');
-        $this->tenantDb->from('menu_item_variations v');
-        $this->tenantDb->join('menuDetails md', 'md.id = v.menu_detail_id', 'left');
-        $this->tenantDb->where('v.is_deleted', 0);
+        $this->tenantDb->select('mo.id, mo.menu_option_name, mo.description,
+            mo.cuisineValues AS cuisine_type_ids,
+            mo.nutritionValues AS nutritional_values,
+            mo.allergenValues,
+            mdto.main_menu_id AS menu_detail_id,
+            md.name AS menu_name');
+        $this->tenantDb->from('menu_options mo');
+        $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id', 'left');
+        $this->tenantDb->join('menuDetails md', 'md.id = mdto.main_menu_id', 'left');
+        $this->tenantDb->where('mo.is_deleted', 0);
+        $this->tenantDb->where('mo.status', 1);
         $this->tenantDb->order_by('md.sort_order', 'ASC');
-        $this->tenantDb->order_by('v.sort_order', 'ASC');
+        $this->tenantDb->order_by('mo.id', 'ASC');
         $query = $this->tenantDb->get();
         return $query->result_array();
     }
 
     /**
-     * Fetch menu details along with variations (for dashboard use).
+     * Fetch menu details along with linked menu options as "variations" (for dashboard use).
      */
     public function fetchMenuDetailsWithVariations($isDashboard = false) {
         $results = $this->fetchMenuDetails('', $isDashboard);

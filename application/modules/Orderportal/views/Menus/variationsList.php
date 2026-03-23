@@ -40,7 +40,7 @@ function variationIdsToNames($jsonIds, $list) {
                                     </div>
 
                                     <div class="w-100 w-md-50 w-lg-25">
-                                        <input type="text" id="table-search" class="form-control py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="Search by menu, cuisine, or allergies...">
+                                        <input type="text" id="table-search" class="form-control py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="Search by menu, option name, or description...">
                                     </div>
 
                                     <div class="ms-auto">
@@ -56,11 +56,9 @@ function variationIdsToNames($jsonIds, $list) {
                                     <table class="table align-middle" id="variationsTable">
                                         <thead class="table-dark text-white">
                                             <tr>
-                                                <th>Menu Item</th>
-                                                <th>Variation Name (Cuisine Types)</th>
-                                                <th>Ingredients / Description</th>
-                                                <th>Nutritional Values</th>
-                                                <th>Allergens</th>
+                                                <th>Menu</th>
+                                                <th>Menu Option Name</th>
+                                                <th>Description</th>
                                                 <th>Actions</th>
                                             </tr>
                                         </thead>
@@ -69,19 +67,11 @@ function variationIdsToNames($jsonIds, $list) {
                                                 <?php foreach ($variations as $v): ?>
                                                     <tr>
                                                         <td><?php echo htmlspecialchars($v['menu_name'] ?? 'N/A'); ?></td>
-                                                        <td><?php
-                                                            $cuisineNames = variationIdsToNames($v['cuisine_type_ids'] ?? '', $cuisines);
-                                                            echo !empty($cuisineNames) ? htmlspecialchars($cuisineNames) : '<span class="text-muted">None</span>';
-                                                        ?></td>
+                                                        <td><?php echo htmlspecialchars($v['menu_option_name'] ?? ''); ?></td>
                                                         <td><?php echo htmlspecialchars($v['description'] ?? ''); ?></td>
-                                                        <td><?php echo !empty($v['nutritional_values']) ? '<span class="badge bg-success">' . htmlspecialchars($v['nutritional_values']) . '</span>' : ''; ?></td>
-                                                        <td><?php
-                                                            $allergenNames = variationIdsToNames($v['allergenValues'] ?? '', $allergies);
-                                                            echo !empty($allergenNames) ? htmlspecialchars($allergenNames) : '';
-                                                        ?></td>
                                                         <td>
                                                             <div class="d-flex gap-2">
-                                                                <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management'); ?>" class="btn btn btn-secondary btn-sm">
+                                                                <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?menu_id=' . (int)($v['menu_detail_id'] ?? 0)); ?>" class="btn btn btn-secondary btn-sm">
                                                                     <i class="ri-edit-2-line align-middle me-1"></i>Edit
                                                                 </a>
                                                                 <button class="btn btn btn-danger btn-sm" onclick="deleteVariationFromList(<?php echo (int)$v['id']; ?>, this)" >
@@ -93,7 +83,7 @@ function variationIdsToNames($jsonIds, $list) {
                                                 <?php endforeach; ?>
                                             <?php else: ?>
                                                 <tr>
-                                                    <td colspan="6" class="text-center">No variations found. <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management'); ?>">Add variations</a></td>
+                                                    <td colspan="4" class="text-center">No menu options found. <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management'); ?>">Add options</a></td>
                                                 </tr>
                                             <?php endif; ?>
                                         </tbody>
@@ -120,12 +110,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
-            if (cells.length < 5) return; // skip "no results" row
+            if (cells.length < 3) return; // skip "no results" row
             const menuName = (cells[0].textContent || '').toLowerCase();
-            const cuisine = (cells[1].textContent || '').toLowerCase();
-            const allergens = (cells[4].textContent || '').toLowerCase();
+            const optionName = (cells[1].textContent || '').toLowerCase();
+            const description = (cells[2].textContent || '').toLowerCase();
 
-            if (menuName.includes(filter) || cuisine.includes(filter) || allergens.includes(filter)) {
+            if (menuName.includes(filter) || optionName.includes(filter) || description.includes(filter)) {
                 row.style.display = '';
             } else {
                 row.style.display = 'none';
@@ -154,7 +144,7 @@ function deleteVariationFromList(id, btn) {
             // Check if table is now empty
             const tbody = document.querySelector('#variationsTable tbody');
             if (!tbody.querySelector('tr')) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center">No variations found. <a href="<?php echo site_url("Orderportal/Configfoodmenu/menu_management"); ?>">Add variations</a></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center">No menu options found. <a href="<?php echo site_url("Orderportal/Configfoodmenu/menu_management"); ?>">Add options</a></td></tr>';
             }
         } else {
             alert(data.message || 'Failed to delete.');

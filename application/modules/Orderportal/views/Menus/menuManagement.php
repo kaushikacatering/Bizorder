@@ -44,7 +44,7 @@
               <label class="form-label fw-semibold">Select Menu Item</label>
               <select id="menuItemSelect" class="form-select">
                 <?php foreach ($menuItems as $i => $mi): ?>
-                  <option value="<?php echo (int)$mi['id']; ?>" <?php echo $i === 0 ? 'selected' : ''; ?>><?php echo htmlspecialchars($mi['name']); ?></option>
+                  <option value="<?php echo (int)$mi['id']; ?>" <?php echo ((int)$mi['id'] === (int)($preselect_menu_id ?? 0)) ? 'selected' : ($i === 0 && empty($preselect_menu_id) ? 'selected' : ''); ?>><?php echo htmlspecialchars($mi['name']); ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
@@ -52,22 +52,48 @@
         </div>
       </div>
 
+      <!-- Menu Option Name & Description -->
+      <div class="card mb-4" id="menuOptionDetailsCard" style="display:none;">
+        <div class="card-header bg-light">
+          <h6 class="mb-0">Menu Option Details</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Menu Option Name</label>
+              <input type="text" id="menuOptionName" class="form-control" placeholder="Enter menu option name" maxlength="255">
+            </div>
+            <div class="col-md-7">
+              <label class="form-label fw-semibold">Description</label>
+              <textarea id="menuOptionDesc" class="form-control" rows="3" placeholder="Enter description"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save All Button (Top) -->
+      <div class="mb-3 text-end" id="saveAllTopWrap" style="display:none;">
+        <button class="btn btn-primary" onclick="saveAll()"><i class="ri-save-line me-1"></i> Save All</button>
+      </div>
+
       <!-- Variations Table -->
-      <div id="variationsCard" class="card">
+      <div id="variationsCard" class="card" style="display:none;">
         <div class="card-header bg-light d-flex align-items-center justify-content-between">
-          <h6 class="mb-0" id="variationsHeading">Variations</h6>
-          <button class="btn btn-sm btn-success" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line me-1"></i>Add Variation</button>
+          <h6 class="mb-0" id="variationsHeading">Menu Options</h6>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-success" onclick="addVariationRow()" title="Add New Option"><i class="ri-add-line me-1"></i>Add Option</button>
+          </div>
         </div>
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-sm table-hover mb-0" id="variationsTable">
               <thead class="table-dark text-white">
                 <tr>
-                  <th style="width:22%">Variation Name</th>
+                  <th style="width:20%">Variations</th>
                   <th style="width:22%">Ingredients / Description</th>
                   <th style="width:16%">Nutritional Values</th>
-                  <th style="width:22%">Allergens</th>
-                  <th style="width:18%" class="text-center">Actions</th>
+                  <th style="width:20%">Allergens</th>
+                  <th style="width:22%" class="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody id="variationsBody">
@@ -77,6 +103,10 @@
               </tbody>
             </table>
           </div>
+        </div>
+        <!-- Save All Button (Bottom) -->
+        <div class="card-footer text-end">
+          <button class="btn btn-primary" onclick="saveAll()"><i class="ri-save-line me-1"></i> Save All</button>
         </div>
       </div>
 
@@ -97,11 +127,18 @@ document.getElementById('menuItemSelect').addEventListener('change', function() 
     selectedMenuId = this.value ? parseInt(this.value) : null;
     if (selectedMenuId) {
         const menuName = this.options[this.selectedIndex].text;
-        document.getElementById('variationsHeading').textContent = 'Variations for: ' + menuName;
+        document.getElementById('variationsHeading').textContent = 'Menu Options for: ' + menuName;
         document.getElementById('variationsCard').style.display = '';
+        document.getElementById('menuOptionDetailsCard').style.display = '';
+        document.getElementById('saveAllTopWrap').style.display = '';
+        // Clear top fields when switching menu items
+        document.getElementById('menuOptionName').value = '';
+        document.getElementById('menuOptionDesc').value = '';
         loadVariations(selectedMenuId);
     } else {
         document.getElementById('variationsCard').style.display = 'none';
+        document.getElementById('menuOptionDetailsCard').style.display = 'none';
+        document.getElementById('saveAllTopWrap').style.display = 'none';
     }
 });
 
@@ -121,12 +158,16 @@ function loadVariations(menuDetailId) {
             data.variations.forEach(v => {
                 tbody.appendChild(buildStaticRow(v));
             });
+            // Populate top fields from first variation
+            const first = data.variations[0];
+            document.getElementById('menuOptionName').value = first.menu_option_name || '';
+            document.getElementById('menuOptionDesc').value = first.description || '';
         } else {
-            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No options yet. Click <b>Add Option</b> above to add one.</td></tr>';
         }
     })
     .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">Failed to load variations.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">Failed to load options.</td></tr>';
     });
 }
 
@@ -135,7 +176,8 @@ function buildStaticRow(v) {
     const tr = document.createElement('tr');
     tr.className = 'variation-row';
     tr.dataset.id = v.id;
-    tr.dataset.menuId = v.menu_detail_id;
+    tr.dataset.menuId = selectedMenuId;
+    tr.dataset.optionName = v.menu_option_name || '';
 
     const cuisineIds = safeJsonParse(v.cuisine_type_ids);
     const allergenIds = safeJsonParse(v.allergenValues);
@@ -148,7 +190,7 @@ function buildStaticRow(v) {
         '<td class="text-center variation-actions">' +
             '<button class="btn btn-sm btn-outline-primary" onclick="editVariation(this)" title="Edit"><i class="ri-pencil-line"></i></button> ' +
             '<button class="btn btn-sm btn-outline-danger" onclick="deleteVariation(' + v.id + ', this)" title="Delete"><i class="ri-delete-bin-line"></i></button> ' +
-            '<button class="btn btn-sm btn-outline-success" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line"></i></button>' +
+            '<button class="btn btn-sm btn-outline-success" onclick="addVariationRow()" title="Add New Option"><i class="ri-add-line"></i></button>' +
         '</td>';
 
     return tr;
@@ -216,7 +258,7 @@ function addVariationRow() {
 
     tr.innerHTML =
         '<td class="v-cuisine-cell"></td>' +
-        '<td><input type="text" class="form-control form-control-sm v-desc-input" maxlength="100" placeholder="Ingredients / Description"></td>' +
+        '<td><input type="text" class="form-control form-control-sm v-desc-input" maxlength="200" placeholder="Ingredients / Description"></td>' +
         '<td><input type="text" class="form-control form-control-sm v-nutrition-input" placeholder="Nutritional values"></td>' +
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +
@@ -234,6 +276,7 @@ function editVariation(btn) {
     const row = btn.closest('tr');
     if (row.classList.contains('editing')) return;
 
+    const name = row.dataset.optionName || '';
     const desc = row.querySelector('.v-desc').textContent.trim();
     const nutrition = row.querySelector('.v-nutrition').textContent.trim();
     const cuisineIds = safeJsonParse(row.querySelector('.v-cuisine').dataset.cuisineIds);
@@ -244,7 +287,7 @@ function editVariation(btn) {
 
     row.innerHTML =
         '<td class="v-cuisine-cell"></td>' +
-        '<td><input type="text" class="form-control form-control-sm v-desc-input" maxlength="100" value="' + escapeAttr(desc) + '"></td>' +
+        '<td><input type="text" class="form-control form-control-sm v-desc-input" maxlength="200" value="' + escapeAttr(desc) + '"></td>' +
         '<td><input type="text" class="form-control form-control-sm v-nutrition-input" value="' + escapeAttr(nutrition) + '"></td>' +
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +
@@ -271,11 +314,11 @@ function cancelVariationRow(btn) {
     const tbody = row.closest('tbody');
     row.remove();
     if (!tbody.querySelector('.variation-row')) {
-        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No options yet. Click <b>Add Option</b> above to add one.</td></tr>';
     }
 }
 
-// ─── SAVE variation (AJAX) ──────────────────────────────────────
+// ─── SAVE variation row (AJAX) ──────────────────────────────────
 function saveVariationRow(btn) {
     const row = btn.closest('tr');
     const cuisineWidget = row.querySelector('.cuisine-widget');
@@ -290,14 +333,16 @@ function saveVariationRow(btn) {
     }
 
     const id = row.dataset.id || '';
-    const menuDetailId = row.dataset.menuId;
+    const menuDetailId = row.dataset.menuId || selectedMenuId;
     const allergenIds = getCheckedValues(allergenWidget);
+    const optionName = document.getElementById('menuOptionName').value.trim();
 
     row.querySelectorAll('button').forEach(b => b.disabled = true);
 
     const formData = new FormData();
     formData.append('id', id);
     formData.append('menu_detail_id', menuDetailId);
+    formData.append('menu_option_name', optionName);
     cuisineIds.forEach(cid => formData.append('cuisine_type_ids[]', cid));
     formData.append('description', descInput ? descInput.value.trim() : '');
     formData.append('nutritional_values', nutritionInput ? nutritionInput.value.trim() : '');
@@ -309,9 +354,9 @@ function saveVariationRow(btn) {
         if (data.success) {
             const newRow = buildStaticRow(data.variation);
             row.replaceWith(newRow);
-            showToast('Variation saved successfully!', 'success');
+            showToast('Option saved successfully!', 'success');
         } else {
-            showToast(data.message || 'Failed to save variation.', 'danger');
+            showToast(data.message || 'Failed to save option.', 'danger');
             row.querySelectorAll('button').forEach(b => b.disabled = false);
         }
     })
@@ -321,15 +366,96 @@ function saveVariationRow(btn) {
     });
 }
 
+// ─── SAVE ALL rows at once ──────────────────────────────────────
+function saveAll() {
+    if (!selectedMenuId) {
+        showToast('Please select a Menu Item.', 'warning');
+        return;
+    }
+
+    const topName = document.getElementById('menuOptionName').value.trim();
+    const topDesc = document.getElementById('menuOptionDesc').value.trim();
+
+    const rows = document.querySelectorAll('#variationsBody .variation-row');
+    if (!rows.length) {
+        showToast('No options to save. Add at least one row.', 'warning');
+        return;
+    }
+
+    const variations = [];
+    let hasError = false;
+
+    rows.forEach(row => {
+        if (row.classList.contains('editing')) {
+            const cuisineWidget = row.querySelector('.cuisine-widget');
+            const allergenWidget = row.querySelector('.allergen-widget');
+            const descInput = row.querySelector('.v-desc-input');
+            const nutritionInput = row.querySelector('.v-nutrition-input');
+            const cuisineIds = getCheckedValues(cuisineWidget);
+
+            if (!cuisineIds.length) { hasError = true; }
+
+            variations.push({
+                id: row.dataset.id || '',
+                menu_option_name: topName,
+                cuisine_type_ids: cuisineIds,
+                description: descInput ? descInput.value.trim() : '',
+                nutritional_values: nutritionInput ? nutritionInput.value.trim() : '',
+                allergenValues: getCheckedValues(allergenWidget)
+            });
+        } else {
+            // Static row
+            variations.push({
+                id: row.dataset.id || '',
+                menu_option_name: topName,
+                cuisine_type_ids: safeJsonParse(row.querySelector('.v-cuisine')?.dataset.cuisineIds),
+                description: row.querySelector('.v-desc')?.textContent.trim() || '',
+                nutritional_values: row.querySelector('.v-nutrition')?.textContent.trim() || '',
+                allergenValues: safeJsonParse(row.querySelector('.v-allergens')?.dataset.allergenIds)
+            });
+        }
+    });
+
+    if (hasError) {
+        showToast('Each option must have at least one cuisine type selected.', 'warning');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('menu_detail_id', selectedMenuId);
+    formData.append('menu_option_name', topName);
+    formData.append('top_description', topDesc);
+    formData.append('variations', JSON.stringify(variations));
+
+    document.querySelectorAll('button[onclick="saveAll()"]').forEach(b => b.disabled = true);
+
+    fetch(BASE_URL + 'Orderportal/Configfoodmenu/save_all_menu_options', { method: 'POST', headers: AJAX_HEADERS, body: formData })
+    .then(r => r.json())
+    .then(data => {
+        document.querySelectorAll('button[onclick="saveAll()"]').forEach(b => b.disabled = false);
+        if (data.success) {
+            showToast(data.message || 'All options saved!', 'success');
+            loadVariations(selectedMenuId);
+        } else {
+            showToast(data.message || 'Failed to save.', 'danger');
+        }
+    })
+    .catch(() => {
+        document.querySelectorAll('button[onclick="saveAll()"]').forEach(b => b.disabled = false);
+        showToast('Network error.', 'danger');
+    });
+}
+
 // ─── DELETE variation ───────────────────────────────────────────
 function deleteVariation(id, btn) {
-    if (!confirm('Are you sure you want to delete this variation?')) return;
+    if (!confirm('Are you sure you want to delete this option?')) return;
 
     const row = btn.closest('tr');
     const tbody = row.closest('tbody');
 
     const formData = new FormData();
     formData.append('id', id);
+    formData.append('menu_detail_id', selectedMenuId);
 
     fetch(BASE_URL + 'Orderportal/Configfoodmenu/delete_variation', { method: 'POST', headers: AJAX_HEADERS, body: formData })
     .then(r => r.json())
@@ -337,9 +463,9 @@ function deleteVariation(id, btn) {
         if (data.success) {
             row.remove();
             if (!tbody.querySelector('.variation-row')) {
-                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No options yet. Click <b>Add Option</b> above to add one.</td></tr>';
             }
-            showToast('Variation deleted.', 'success');
+            showToast('Option deleted.', 'success');
         } else {
             showToast(data.message || 'Failed to delete.', 'danger');
         }
