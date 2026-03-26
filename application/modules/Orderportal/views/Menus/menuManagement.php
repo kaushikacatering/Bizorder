@@ -13,6 +13,10 @@
 .cb-dropdown-panel.open { display: block; }
 .cb-dropdown-panel label { display: flex; align-items: center; padding: 4px 10px; cursor: pointer; font-size: 0.85rem; }
 .cb-dropdown-panel label:hover { background: #f3f4f6; }
+.cb-dropdown-search { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; background: #fff; z-index: 1; }
+.cb-dropdown-search input { width: 100%; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.82rem; outline: none; }
+.cb-dropdown-search input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+.cb-dropdown-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 /* Fix dropdown clipping */
 #variationsTable { overflow: visible !important; }
 .table-responsive { overflow: visible !important; }
@@ -205,12 +209,29 @@ function buildCbDropdown(items, selectedIds, cssClass) {
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'btn btn-sm btn-outline-secondary w-100 text-start text-truncate';
-    btn.textContent = selectedIds.length ? selectedIds.length + ' selected' : 'Select...';
+    btn.className = 'btn btn-sm btn-outline-secondary w-100 text-start';
+    btn.innerHTML = '<span class="cb-dropdown-btn-text">' + escapeHtml(getSelectedNames(items, selectedIds)) + '</span>';
     wrapper.appendChild(btn);
 
     const panel = document.createElement('div');
     panel.className = 'cb-dropdown-panel';
+
+    // Search input
+    const searchDiv = document.createElement('div');
+    searchDiv.className = 'cb-dropdown-search';
+    searchDiv.innerHTML = '<input type="text" placeholder="Search..." class="cb-search-input">';
+    panel.appendChild(searchDiv);
+
+    const searchInput = searchDiv.querySelector('.cb-search-input');
+    searchInput.addEventListener('input', function() {
+        const term = this.value.toLowerCase();
+        panel.querySelectorAll('label').forEach(lbl => {
+            const name = lbl.querySelector('span').textContent.toLowerCase();
+            lbl.style.display = name.includes(term) ? '' : 'none';
+        });
+    });
+    searchInput.addEventListener('click', function(e) { e.stopPropagation(); });
+
     items.forEach(item => {
         const lbl = document.createElement('label');
         lbl.innerHTML = '<input type="checkbox" class="form-check-input me-2 cb-item" value="' + item.id + '"' +
@@ -223,14 +244,25 @@ function buildCbDropdown(items, selectedIds, cssClass) {
         e.stopPropagation();
         document.querySelectorAll('.cb-dropdown-panel.open').forEach(p => { if (p !== panel) p.classList.remove('open'); });
         panel.classList.toggle('open');
+        if (panel.classList.contains('open')) { searchInput.value = ''; searchInput.dispatchEvent(new Event('input')); searchInput.focus(); }
     });
 
     panel.addEventListener('change', function() {
-        const checked = panel.querySelectorAll('.cb-item:checked');
-        btn.textContent = checked.length ? checked.length + ' selected' : 'Select...';
+        const checkedIds = Array.from(panel.querySelectorAll('.cb-item:checked')).map(cb => cb.value);
+        btn.querySelector('.cb-dropdown-btn-text').textContent = getSelectedNames(items, checkedIds);
     });
 
     return wrapper;
+}
+
+function getSelectedNames(items, selectedIds) {
+    if (!selectedIds || !selectedIds.length) return 'Select...';
+    const names = [];
+    selectedIds.forEach(id => {
+        const item = items.find(x => String(x.id) === String(id));
+        if (item) names.push(item.name);
+    });
+    return names.length ? names.join(', ') : 'Select...';
 }
 
 // Close dropdowns when clicking outside
