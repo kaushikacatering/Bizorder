@@ -792,14 +792,6 @@ function validateForm() {
         categoryBtn.classList.add('border-gray-300', 'focus:border-primary-500', 'focus:ring-primary-500');
     }
     
-    // Validate selected items - show modal if no items selected
-    if (selectedMenuOptions.length === 0) {
-        // console.log('No items selected, showing warning modal');
-        // Show warning modal
-        showWarningModal('Please select at least one item option before saving.');
-        isValid = false;
-    }
-    
     // console.log('Validation result:', isValid);
     return isValid;
 }
