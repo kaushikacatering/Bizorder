@@ -5,18 +5,18 @@
 .variation-actions button { margin: 0 2px; }
 .cb-dropdown-container { position: relative; display: inline-block; width: 100%; }
 .cb-dropdown-panel {
-    position: absolute; z-index: 1050; top: 100%; left: 0; min-width: 220px;
-    max-height: 200px; overflow-y: auto;
-    background: #fff; border: 1px solid #d1d5db; border-radius: 0.5rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12); display: none;
+    position: absolute; z-index: 1050; top: 100%; left: 0; min-width: 240px;
+    max-height: 220px; overflow-y: auto;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 0.5rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08); display: none; margin-top: 4px;
 }
 .cb-dropdown-panel.open { display: block; }
-.cb-dropdown-panel label { display: flex; align-items: center; padding: 4px 10px; cursor: pointer; font-size: 0.85rem; }
-.cb-dropdown-panel label:hover { background: #f3f4f6; }
-.cb-dropdown-search { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; background: #fff; z-index: 1; }
-.cb-dropdown-search input { width: 100%; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.82rem; outline: none; }
-.cb-dropdown-search input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
-.cb-dropdown-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.cb-dropdown-panel label { display: flex; align-items: center; padding: 6px 12px; cursor: pointer; font-size: 0.82rem; color: #374151; transition: none; }
+.cb-dropdown-panel label:hover { background: transparent; }
+.cb-dropdown-search { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; background: #fff; z-index: 1; }
+.cb-dropdown-search input { width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.82rem; outline: none; background: #f9fafb; }
+.cb-dropdown-search input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); background: #fff; }
+.cb-dropdown-btn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; font-size: 0.82rem; color: #374151; }
 /* Fix dropdown clipping */
 #variationsTable { overflow: visible !important; }
 .table-responsive { overflow: visible !important; }
@@ -31,86 +31,72 @@
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
           <h5 class="card-title mb-0 text-black"><?php echo htmlspecialchars($title); ?></h5>
-          <p class="text-muted small mb-0">Manage menu items and their dietary variations</p>
+          <p class="text-black small mb-0">Manage menu items and their dietary variations</p>
         </div>
-        <div>
-          <a class="btn btn-outline-secondary btn-sm" href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management_list'); ?>">
+        <div class="d-flex gap-2 align-items-center">
+          
+          <a class="btn btn-danger btn-md" href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management_list'); ?>">
             <i class="ri-arrow-left-line me-1"></i> Back to Variations List
           </a>
+          <div id="saveAllTopWrap" style="display:none;">
+            <button class="btn text-white btn-md" style="background-color:#10a88f;" onclick="saveAll()"><i class="ri-save-line me-1"></i> Save </button>
+          </div>
+
         </div>
       </div>
 
-      <!-- Menu Item Selector -->
-      <div class="card mb-4">
+      <!-- Menu Item Selector + Option Name + Description + Variations -->
+      <div class="card mb-4" id="mainCard">
         <div class="card-body">
-          <div class="row align-items-end">
-            <div class="col-md-5">
+          <div class="row g-3 align-items-end mb-3">
+            <div class="col-md-3">
               <label class="form-label fw-semibold">Select Menu Item</label>
-              <select id="menuItemSelect" class="form-select">
+              <select id="menuItemSelect" class="form-select px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-gray-50 text-sm">
+                <option value="">-- Select Menu Item --</option>
                 <?php foreach ($menuItems as $i => $mi): ?>
-                  <option value="<?php echo (int)$mi['id']; ?>" <?php echo ((int)$mi['id'] === (int)($preselect_menu_id ?? 0)) ? 'selected' : ($i === 0 && empty($preselect_menu_id) ? 'selected' : ''); ?>><?php echo htmlspecialchars($mi['name']); ?></option>
+                  <option value="<?php echo (int)$mi['id']; ?>" <?php echo ((int)$mi['id'] === (int)($preselect_menu_id ?? 0)) ? 'selected' : ''; ?>><?php echo htmlspecialchars($mi['name']); ?></option>
                 <?php endforeach; ?>
               </select>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Menu Option Name & Description -->
-      <div class="card mb-4" id="menuOptionDetailsCard" style="display:none;">
-        <div class="card-header bg-light">
-          <h6 class="mb-0">Menu Option Details</h6>
-        </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-5">
+            <div class="col-md-3" id="menuOptionNameWrap" style="display:none;">
               <label class="form-label fw-semibold">Menu Option Name</label>
               <input type="text" id="menuOptionName" class="form-control" placeholder="Enter menu option name" maxlength="255">
             </div>
-            <div class="col-md-7">
+            <div class="col-md-6" id="menuOptionDescWrap" style="display:none;">
               <label class="form-label fw-semibold">Description</label>
-              <textarea id="menuOptionDesc" class="form-control" rows="3" placeholder="Enter description"></textarea>
+              <input type="text" id="menuOptionDesc" class="form-control" placeholder="Enter description">
+            </div>
+          </div>
+
+          <!-- Variations Section (shown after menu item selected) -->
+          <div id="variationsCard" style="display:none;">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="mb-0" id="variationsHeading">Variations</h6>
+              <button class="btn btn-sm text-white" style="background-color:#4285f4;" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line me-1"></i>Add Variation</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover mb-0" id="variationsTable">
+                <thead class="table-dark text-white">
+                  <tr>
+                    <th style="width:20%">Variations</th>
+                    <th style="width:22%">Ingredients / Description</th>
+                    <th style="width:16%">Nutritional Values</th>
+                    <th style="width:20%">Allergens</th>
+                    <th style="width:22%" class="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="variationsBody">
+                  <tr class="no-variations-row">
+                    <td colspan="5" class="text-center text-muted py-3">Loading...</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Save All Button (Top) -->
-      <div class="mb-3 text-end" id="saveAllTopWrap" style="display:none;">
-        <button class="btn btn-primary" onclick="saveAll()"><i class="ri-save-line me-1"></i> Save All</button>
-      </div>
-
-      <!-- Variations Table -->
-      <div id="variationsCard" class="card" style="display:none;">
-        <div class="card-header bg-light d-flex align-items-center justify-content-between">
-          <h6 class="mb-0" id="variationsHeading">Menu Options</h6>
-          <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-success" onclick="addVariationRow()" title="Add New Option"><i class="ri-add-line me-1"></i>Add Option</button>
-          </div>
-        </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0" id="variationsTable">
-              <thead class="table-dark text-white">
-                <tr>
-                  <th style="width:20%">Variations</th>
-                  <th style="width:22%">Ingredients / Description</th>
-                  <th style="width:16%">Nutritional Values</th>
-                  <th style="width:20%">Allergens</th>
-                  <th style="width:22%" class="text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="variationsBody">
-                <tr class="no-variations-row">
-                  <td colspan="5" class="text-center text-muted py-3">Loading...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
         <!-- Save All Button (Bottom) -->
-        <div class="card-footer text-end">
-          <button class="btn btn-primary" onclick="saveAll()"><i class="ri-save-line me-1"></i> Save All</button>
+        <div class="card-footer text-end" id="saveAllBottomWrap" style="display:none;">
+          <button class="btn text-white" style="background-color:#10a88f;" onclick="saveAll()"><i class="ri-save-line me-1"></i> Save All</button>
         </div>
       </div>
 
@@ -124,6 +110,11 @@ const ALL_CUISINES = <?php echo json_encode($cuisines); ?>;
 const ALL_ALLERGENS = <?php echo json_encode($allergies); ?>;
 const AJAX_HEADERS = {'X-Requested-With': 'XMLHttpRequest'};
 
+// Mode: 'add' or 'edit'
+const PAGE_MODE = '<?php echo ($mode ?? 'add') === 'edit' ? 'edit' : 'add'; ?>';
+const EDIT_OPTION_NAME = <?php echo json_encode($edit_option_name ?? ''); ?>;
+const PRESELECT_MENU_ID = <?php echo (int)($preselect_menu_id ?? 0); ?>;
+
 let selectedMenuId = null;
 
 // ─── Menu Item dropdown change ──────────────────────────────────
@@ -131,28 +122,42 @@ document.getElementById('menuItemSelect').addEventListener('change', function() 
     selectedMenuId = this.value ? parseInt(this.value) : null;
     if (selectedMenuId) {
         const menuName = this.options[this.selectedIndex].text;
-        document.getElementById('variationsHeading').textContent = 'Menu Options for: ' + menuName;
+        document.getElementById('variationsHeading').textContent = 'Variations for: ' + menuName;
         document.getElementById('variationsCard').style.display = '';
-        document.getElementById('menuOptionDetailsCard').style.display = '';
+        document.getElementById('menuOptionNameWrap').style.display = '';
+        document.getElementById('menuOptionDescWrap').style.display = '';
         document.getElementById('saveAllTopWrap').style.display = '';
-        // Clear top fields when switching menu items
-        document.getElementById('menuOptionName').value = '';
-        document.getElementById('menuOptionDesc').value = '';
-        loadVariations(selectedMenuId);
+        document.getElementById('saveAllBottomWrap').style.display = '';
+
+        if (PAGE_MODE === 'edit' && EDIT_OPTION_NAME) {
+            // Edit mode: load existing variations for this specific option
+            loadVariations(selectedMenuId, EDIT_OPTION_NAME);
+        } else {
+            // Add mode: show empty form, do NOT fetch existing
+            document.getElementById('menuOptionName').value = '';
+            document.getElementById('menuOptionDesc').value = '';
+            var tbody = document.getElementById('variationsBody');
+            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+        }
     } else {
         document.getElementById('variationsCard').style.display = 'none';
-        document.getElementById('menuOptionDetailsCard').style.display = 'none';
+        document.getElementById('menuOptionNameWrap').style.display = 'none';
+        document.getElementById('menuOptionDescWrap').style.display = 'none';
         document.getElementById('saveAllTopWrap').style.display = 'none';
+        document.getElementById('saveAllBottomWrap').style.display = 'none';
     }
 });
 
 // ─── Load variations via AJAX ───────────────────────────────────
-function loadVariations(menuDetailId) {
+function loadVariations(menuDetailId, optionName) {
     const tbody = document.getElementById('variationsBody');
     tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3"><i class="ri-loader-4-line ri-spin me-1"></i> Loading...</td></tr>';
 
     const formData = new FormData();
     formData.append('menu_detail_id', menuDetailId);
+    if (optionName) {
+        formData.append('menu_option_name', optionName);
+    }
 
     fetch(BASE_URL + 'Orderportal/Configfoodmenu/get_variations', { method: 'POST', headers: AJAX_HEADERS, body: formData })
     .then(r => r.json())
@@ -167,11 +172,11 @@ function loadVariations(menuDetailId) {
             document.getElementById('menuOptionName').value = first.menu_option_name || '';
             document.getElementById('menuOptionDesc').value = first.description || '';
         } else {
-            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No options yet. Click <b>Add Option</b> above to add one.</td></tr>';
+            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
         }
     })
     .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">Failed to load options.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-3">Failed to load variations.</td></tr>';
     });
 }
 
@@ -194,7 +199,7 @@ function buildStaticRow(v) {
         '<td class="text-center variation-actions">' +
             '<button class="btn btn-sm btn-outline-primary" onclick="editVariation(this)" title="Edit"><i class="ri-pencil-line"></i></button> ' +
             '<button class="btn btn-sm btn-outline-danger" onclick="deleteVariation(' + v.id + ', this)" title="Delete"><i class="ri-delete-bin-line"></i></button> ' +
-            '<button class="btn btn-sm btn-outline-success" onclick="addVariationRow()" title="Add New Option"><i class="ri-add-line"></i></button>' +
+            '<button class="btn btn-sm btn-outline-success" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line"></i></button>' +
         '</td>';
 
     return tr;
@@ -209,7 +214,7 @@ function buildCbDropdown(items, selectedIds, cssClass) {
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'btn btn-sm btn-outline-secondary w-100 text-start';
+    btn.className = 'w-100 text-start px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm';
     btn.innerHTML = '<span class="cb-dropdown-btn-text">' + escapeHtml(getSelectedNames(items, selectedIds)) + '</span>';
     wrapper.appendChild(btn);
 
@@ -295,7 +300,7 @@ function addVariationRow() {
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +
             '<button class="btn btn-sm btn-success" onclick="saveVariationRow(this)" title="Save"><i class="ri-check-line"></i></button> ' +
-            '<button class="btn btn-sm btn-outline-secondary" onclick="cancelVariationRow(this)" title="Cancel"><i class="ri-close-line"></i></button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="cancelVariationRow(this)" title="Cancel"><i class="ri-close-line"></i></button>' +
         '</td>';
 
     tr.querySelector('.v-cuisine-cell').appendChild(buildCbDropdown(ALL_CUISINES, [], 'cuisine-widget'));
@@ -346,7 +351,7 @@ function cancelVariationRow(btn) {
     const tbody = row.closest('tbody');
     row.remove();
     if (!tbody.querySelector('.variation-row')) {
-        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No options yet. Click <b>Add Option</b> above to add one.</td></tr>';
+        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
     }
 }
 
@@ -386,9 +391,9 @@ function saveVariationRow(btn) {
         if (data.success) {
             const newRow = buildStaticRow(data.variation);
             row.replaceWith(newRow);
-            showToast('Option saved successfully!', 'success');
+            showToast('Variation saved successfully!', 'success');
         } else {
-            showToast(data.message || 'Failed to save option.', 'danger');
+            showToast(data.message || 'Failed to save variation.', 'danger');
             row.querySelectorAll('button').forEach(b => b.disabled = false);
         }
     })
@@ -410,7 +415,7 @@ function saveAll() {
 
     const rows = document.querySelectorAll('#variationsBody .variation-row');
     if (!rows.length) {
-        showToast('No options to save. Add at least one row.', 'warning');
+        showToast('No variations to save. Add at least one row.', 'warning');
         return;
     }
 
@@ -449,7 +454,7 @@ function saveAll() {
     });
 
     if (hasError) {
-        showToast('Each option must have at least one cuisine type selected.', 'warning');
+        showToast('Each variation must have at least one cuisine type selected.', 'warning');
         return;
     }
 
@@ -466,8 +471,12 @@ function saveAll() {
     .then(data => {
         document.querySelectorAll('button[onclick="saveAll()"]').forEach(b => b.disabled = false);
         if (data.success) {
-            showToast(data.message || 'All options saved!', 'success');
-            loadVariations(selectedMenuId);
+            showToast(data.message || 'All variations saved!', 'success');
+            if (PAGE_MODE === 'edit' && EDIT_OPTION_NAME) {
+                loadVariations(selectedMenuId, document.getElementById('menuOptionName').value.trim());
+            } else {
+                loadVariations(selectedMenuId, document.getElementById('menuOptionName').value.trim());
+            }
         } else {
             showToast(data.message || 'Failed to save.', 'danger');
         }
@@ -480,7 +489,7 @@ function saveAll() {
 
 // ─── DELETE variation ───────────────────────────────────────────
 function deleteVariation(id, btn) {
-    if (!confirm('Are you sure you want to delete this option?')) return;
+    if (!confirm('Are you sure you want to delete this variation?')) return;
 
     const row = btn.closest('tr');
     const tbody = row.closest('tbody');
@@ -495,9 +504,9 @@ function deleteVariation(id, btn) {
         if (data.success) {
             row.remove();
             if (!tbody.querySelector('.variation-row')) {
-                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No options yet. Click <b>Add Option</b> above to add one.</td></tr>';
+                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
             }
-            showToast('Option deleted.', 'success');
+            showToast('Variation deleted.', 'success');
         } else {
             showToast(data.message || 'Failed to delete.', 'danger');
         }
@@ -546,10 +555,11 @@ function showToast(msg, type) {
     setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
 }
 
-// ─── Auto-select first menu item on load ────────────────────────
+// ─── Auto-select menu item on page load (edit mode only) ────────
 document.addEventListener('DOMContentLoaded', function() {
     const sel = document.getElementById('menuItemSelect');
-    if (sel.options.length > 0 && sel.value) {
+    if (PAGE_MODE === 'edit' && PRESELECT_MENU_ID && sel.value) {
+        sel.value = PRESELECT_MENU_ID;
         sel.dispatchEvent(new Event('change'));
     }
 });

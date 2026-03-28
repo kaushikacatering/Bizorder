@@ -674,6 +674,8 @@ class Configfoodmenu extends MY_Controller
     public function menu_management() {
         $data['title'] = 'Menu Management';
         $data['preselect_menu_id'] = (int) $this->input->get('menu_id');
+        $data['mode'] = $this->input->get('mode') ?: 'add';
+        $data['edit_option_name'] = $this->input->get('option_name') ?: '';
 
         // Menu items for dropdown
         $data['menuItems'] = $this->menu_model->get_all_menu_items_for_dropdown();
@@ -705,7 +707,8 @@ class Configfoodmenu extends MY_Controller
             return;
         }
 
-        $variations = $this->menu_model->get_variations_by_menu($menu_detail_id);
+        $menu_option_name = $this->input->post('menu_option_name');
+        $variations = $this->menu_model->get_variations_by_menu($menu_detail_id, $menu_option_name);
         echo json_encode(['success' => true, 'variations' => $variations]);
     }
 
@@ -844,6 +847,26 @@ class Configfoodmenu extends MY_Controller
         }
 
         echo json_encode(['success' => $result, 'message' => $result ? 'Option deleted.' : 'Failed to delete.']);
+    }
+
+    /**
+     * AJAX: Delete all variations of a menu option (by name + menu_detail_id)
+     */
+    public function delete_menu_option_group() {
+        if (!$this->input->is_ajax_request()) {
+            show_404();
+        }
+
+        $menu_detail_id = (int) $this->input->post('menu_detail_id');
+        $option_name = $this->security->xss_clean(trim($this->input->post('option_name')));
+
+        if (empty($menu_detail_id) || $option_name === '') {
+            echo json_encode(['success' => false, 'message' => 'Invalid parameters.']);
+            return;
+        }
+
+        $result = $this->menu_model->delete_variations_by_option_name($menu_detail_id, $option_name);
+        echo json_encode(['success' => $result, 'message' => $result ? 'Menu option and all its variations deleted.' : 'Failed to delete.']);
     }
 
 

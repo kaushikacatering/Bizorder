@@ -44,8 +44,8 @@ function variationIdsToNames($jsonIds, $list) {
                                     </div>
 
                                     <div class="ms-auto">
-                                        <a class="btn btn-success" href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management'); ?>">
-                                            <i class="ri-add-line align-bottom me-1"></i> Add / Manage Variations
+                                        <a class="btn btn-success" href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?mode=add'); ?>">
+                                            <i class="ri-add-line align-bottom me-1"></i> Add Menu Item
                                         </a>
                                     </div>
                                 </div>
@@ -59,6 +59,7 @@ function variationIdsToNames($jsonIds, $list) {
                                                 <th>Menu</th>
                                                 <th>Menu Option Name</th>
                                                 <th>Description</th>
+                                                <th>Variations</th>
                                                 <th>Actions</th>
                                             </tr>
                                         </thead>
@@ -69,12 +70,13 @@ function variationIdsToNames($jsonIds, $list) {
                                                         <td><?php echo htmlspecialchars($v['menu_name'] ?? 'N/A'); ?></td>
                                                         <td><?php echo htmlspecialchars($v['menu_option_name'] ?? ''); ?></td>
                                                         <td><?php echo htmlspecialchars($v['description'] ?? ''); ?></td>
+                                                        <td><span class="badge bg-info"><?php echo (int)($v['variation_count'] ?? 0); ?></span></td>
                                                         <td>
                                                             <div class="d-flex gap-2">
-                                                                <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?menu_id=' . (int)($v['menu_detail_id'] ?? 0)); ?>" class="btn btn btn-secondary btn-sm">
+                                                                <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?mode=edit&menu_id=' . (int)($v['menu_detail_id'] ?? 0) . '&option_name=' . urlencode($v['menu_option_name'] ?? '')); ?>" class="btn btn btn-secondary btn-sm">
                                                                     <i class="ri-edit-2-line align-middle me-1"></i>Edit
                                                                 </a>
-                                                                <button class="btn btn btn-danger btn-sm" onclick="deleteVariationFromList(<?php echo (int)$v['id']; ?>, this)" >
+                                                                <button class="btn btn btn-danger btn-sm" onclick="deleteMenuOptionGroup(<?php echo (int)($v['menu_detail_id'] ?? 0); ?>, '<?php echo addslashes(htmlspecialchars($v['menu_option_name'] ?? '')); ?>', this)" >
                                                                     <i class="ri-delete-bin-line align-middle me-1"></i>Delete
                                                                 </button>
                                                             </div>
@@ -83,7 +85,7 @@ function variationIdsToNames($jsonIds, $list) {
                                                 <?php endforeach; ?>
                                             <?php else: ?>
                                                 <tr>
-                                                    <td colspan="4" class="text-center">No menu options found. <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management'); ?>">Add options</a></td>
+                                                    <td colspan="5" class="text-center">No menu options found. <a href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?mode=add'); ?>">Add options</a></td>
                                                 </tr>
                                             <?php endif; ?>
                                         </tbody>
@@ -124,15 +126,16 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
-// Delete variation via AJAX
-function deleteVariationFromList(id, btn) {
-    if (!confirm('Are you sure you want to delete this variation?')) return;
+// Delete menu option group (all variations) via AJAX
+function deleteMenuOptionGroup(menuDetailId, optionName, btn) {
+    if (!confirm('Are you sure you want to delete this menu option and all its variations?')) return;
 
     const row = btn.closest('tr');
     const formData = new FormData();
-    formData.append('id', id);
+    formData.append('menu_detail_id', menuDetailId);
+    formData.append('option_name', optionName);
 
-    fetch('<?php echo base_url(); ?>Orderportal/Configfoodmenu/delete_variation', {
+    fetch('<?php echo base_url(); ?>Orderportal/Configfoodmenu/delete_menu_option_group', {
         method: 'POST',
         headers: {'X-Requested-With': 'XMLHttpRequest'},
         body: formData
@@ -144,7 +147,7 @@ function deleteVariationFromList(id, btn) {
             // Check if table is now empty
             const tbody = document.querySelector('#variationsTable tbody');
             if (!tbody.querySelector('tr')) {
-                tbody.innerHTML = '<tr><td colspan="4" class="text-center">No menu options found. <a href="<?php echo site_url("Orderportal/Configfoodmenu/menu_management"); ?>">Add options</a></td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">No menu options found. <a href="<?php echo site_url("Orderportal/Configfoodmenu/menu_management?mode=add"); ?>">Add options</a></td></tr>';
             }
         } else {
             alert(data.message || 'Failed to delete.');

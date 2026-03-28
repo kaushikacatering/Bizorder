@@ -440,7 +440,7 @@ return $query->result_array();
      * Get all menu options linked to a given menu item (menuDetails.id)
      * Aliases columns to keep JS compatibility with the old variation field names.
      */
-    public function get_variations_by_menu($menu_detail_id) {
+    public function get_variations_by_menu($menu_detail_id, $menu_option_name = null) {
         $this->tenantDb->select('mo.id, mo.menu_option_name, mo.description,
             mo.cuisineValues AS cuisine_type_ids,
             mo.nutritionValues AS nutritional_values,
@@ -449,6 +449,9 @@ return $query->result_array();
         $this->tenantDb->from('menu_options mo');
         $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id');
         $this->tenantDb->where('mdto.main_menu_id', $menu_detail_id);
+        if (!empty($menu_option_name)) {
+            $this->tenantDb->where('mo.menu_option_name', $menu_option_name);
+        }
         $this->tenantDb->where('mo.status', 1);
         $this->tenantDb->where('mo.is_deleted', 0);
         $this->tenantDb->order_by('mo.id', 'ASC');
@@ -522,6 +525,35 @@ return $query->result_array();
     }
 
     /**
+     * Delete all variations of a menu option by name under a given menu item
+     */
+    public function delete_variations_by_option_name($menu_detail_id, $option_name) {
+        // Get all menu_option IDs linked to this menu item with this option name
+        $this->tenantDb->select('mo.id');
+        $this->tenantDb->from('menu_options mo');
+        $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id');
+        $this->tenantDb->where('mdto.main_menu_id', $menu_detail_id);
+        $this->tenantDb->where('mo.menu_option_name', $option_name);
+        $this->tenantDb->where('mo.is_deleted', 0);
+        $rows = $this->tenantDb->get()->result_array();
+
+        if (empty($rows)) return false;
+
+        $ids = array_column($rows, 'id');
+
+        // Soft delete all
+        $this->tenantDb->where_in('id', $ids);
+        $this->tenantDb->update('menu_options', ['is_deleted' => 1, 'date_updated' => date('Y-m-d H:i:s')]);
+
+        // Remove links
+        $this->tenantDb->where('main_menu_id', $menu_detail_id);
+        $this->tenantDb->where_in('menu_option_id', $ids);
+        $this->tenantDb->delete('menu_details_to_menu_options');
+
+        return true;
+    }
+
+    /**
      * Get all active menu items (for the Menu Item dropdown on management page)
      */
     public function get_all_menu_items_for_dropdown() {
@@ -538,10 +570,9 @@ return $query->result_array();
      * Get all menu options joined with their linked menu names (for the listing page)
      */
     public function get_all_variations_list() {
-        $this->tenantDb->select('mo.id, mo.menu_option_name, mo.description,
-            mo.cuisineValues AS cuisine_type_ids,
-            mo.nutritionValues AS nutritional_values,
-            mo.allergenValues,
+        $this->tenantDb->select('MIN(mo.id) AS id, mo.menu_option_name, 
+            MIN(mo.description) AS description,
+            COUNT(mo.id) AS variation_count,
             mdto.main_menu_id AS menu_detail_id,
             md.name AS menu_name');
         $this->tenantDb->from('menu_options mo');
@@ -549,8 +580,9 @@ return $query->result_array();
         $this->tenantDb->join('menuDetails md', 'md.id = mdto.main_menu_id', 'left');
         $this->tenantDb->where('mo.is_deleted', 0);
         $this->tenantDb->where('mo.status', 1);
+        $this->tenantDb->group_by(['mdto.main_menu_id', 'mo.menu_option_name']);
         $this->tenantDb->order_by('md.sort_order', 'ASC');
-        $this->tenantDb->order_by('mo.id', 'ASC');
+        $this->tenantDb->order_by('mo.menu_option_name', 'ASC');
         $query = $this->tenantDb->get();
         return $query->result_array();
     }
