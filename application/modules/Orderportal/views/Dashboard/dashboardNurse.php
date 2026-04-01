@@ -3039,6 +3039,19 @@
                                                         // Show item only if it matches cuisine preferences AND doesn't conflict with allergens
                                                         return matchesCuisine && matchesAllergen;
                                                     })
+                                                    .reduce((acc, option) => {
+                                                        // Deduplicate by menu_option_name: keep first, collect all option_ids
+                                                        const name = option.menu_option_name;
+                                                        const existing = acc.find(o => o.menu_option_name === name);
+                                                        if (existing) {
+                                                            if (!existing._allOptionIds) existing._allOptionIds = [String(existing.option_id)];
+                                                            existing._allOptionIds.push(String(option.option_id));
+                                                        } else {
+                                                            option._allOptionIds = [String(option.option_id)];
+                                                            acc.push(option);
+                                                        }
+                                                        return acc;
+                                                    }, [])
                                                     .map(option => {
                                                         const optionId = String(option.option_id);
                                                         const menuOptionCalorie = String(option.menu_option_calorie);
@@ -3048,8 +3061,12 @@
                                                         
                                                         // Convert all selected IDs to strings for comparison
                                                         const selectedIds = selectedForMenu.map(id => String(id));
-                                                        const isChecked = selectedIds.includes(optionId) ? 'checked' : '';
-                                                        
+                                                        const isChecked = (option._allOptionIds || [optionId]).some(id => selectedIds.includes(id)) ? 'checked' : '';
+                                                        // Hidden inputs for all variation option_ids sharing this name
+                                                        const siblingIds = (option._allOptionIds || [optionId]).filter(id => id !== optionId);
+                                                        const siblingInputs = siblingIds.map(sid => 
+                                                            `<input type="hidden" name="${inputName}" value="${sid}" class="sibling-option" data-parent="option_${bedId}_${category.id}_${menu.menu_id}_${optionId}" disabled>`
+                                                        ).join('');
                                                        
                                                         return `
                                                             <div class="relative">
@@ -3061,6 +3078,7 @@
                                                                        class="peer absolute inset-0 opacity-0 menu-option-checkbox" 
                                                                        ${isChecked} ${disabled} 
                                                                        aria-label="${htmlspecialchars(option.menu_option_name)}">
+                                                                ${siblingInputs}
                                                                 <div class="p-2 border border-gray-200 rounded-lg hover:border-blue-300 ${isChecked ? 'bg-blue-100 border-blue-500' : ''} transition-all cursor-pointer ${disabledClass}">
                                                                     <div class="flex items-center justify-between">
                                                                         <div class="flex items-center space-x-1.5">
@@ -3210,6 +3228,20 @@
                                     const selectedForMenu = patientOrders[`${bedId}_${category.id}_${menu.menu_id}`] || [];
                                     const selectedIds = selectedForMenu.map(id => String(id));
                                     
+                                    // Deduplicate by menu_option_name
+                                    const dedupedOptions = filteredOptions.reduce((acc, option) => {
+                                        const name = option.menu_option_name;
+                                        const existing = acc.find(o => o.menu_option_name === name);
+                                        if (existing) {
+                                            if (!existing._allOptionIds) existing._allOptionIds = [String(existing.option_id)];
+                                            existing._allOptionIds.push(String(option.option_id));
+                                        } else {
+                                            option._allOptionIds = [String(option.option_id)];
+                                            acc.push(option);
+                                        }
+                                        return acc;
+                                    }, []);
+                                    
                                     return `
                                         <div class="mb-6">
                                             <h3 class="text-base font-semibold text-gray-800 flex items-center mb-4">
@@ -3219,9 +3251,13 @@
                                                 </span>
                                             </h3>
                                             <div data-is_main_menu="${menu.is_main_menu}" data-singleSelect="${menu.is_single_select}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 menu-options-grid" data-group="${category.id}_${menu.menu_id}" data-max="${menu.inputType === 'radio' ? 1 : 2}">
-                                                ${filteredOptions.map(option => {
+                                                ${dedupedOptions.map(option => {
                                                     const optionId = String(option.option_id);
-                                                    const isChecked = selectedIds.includes(optionId) ? 'checked' : '';
+                                                    const isChecked = (option._allOptionIds || [optionId]).some(id => selectedIds.includes(id)) ? 'checked' : '';
+                                                    const siblingIds = (option._allOptionIds || [optionId]).filter(id => id !== optionId);
+                                                    const siblingInputs = siblingIds.map(sid => 
+                                                        `<input type="hidden" name="${inputName}" value="${sid}" class="sibling-option" data-parent="option_${bedId}_${category.id}_${menu.menu_id}_${optionId}" disabled>`
+                                                    ).join('');
                                                     return `
                                                         <div class="relative">
                                                             <input type="checkbox" 
@@ -3231,6 +3267,7 @@
                                                                    class="peer absolute inset-0 opacity-0 menu-option-checkbox" 
                                                                    ${isChecked} 
                                                                    aria-label="${htmlspecialchars(option.menu_option_name)}">
+                                                            ${siblingInputs}
                                                             <div class="p-2 border border-gray-200 rounded-lg hover:border-blue-300 ${isChecked ? 'bg-blue-100 border-blue-500' : ''} transition-all cursor-pointer">
                                                                 <div class="text-sm font-medium text-gray-800">${htmlspecialchars(option.menu_option_name)}</div>
                                                                 ${option.menu_option_calorie && option.menu_option_calorie !== 'N/A' ? `<small class="text-xs text-gray-500">${option.menu_option_calorie} cal</small>` : ''}
@@ -3259,6 +3296,10 @@
                     setupChoiceCounters();
                     // Also update all counters to ensure they show correct initial values
                     updateChoiceCounters();
+                    // Enable sibling hidden inputs for already-checked options
+                    document.querySelectorAll('.menu-option-checkbox:checked').forEach(cb => {
+                        document.querySelectorAll(`.sibling-option[data-parent="${cb.id}"]`).forEach(s => s.disabled = false);
+                    });
                 }, 100);
 
                 // Add event listeners for view-more links
@@ -3634,6 +3675,12 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
                     
                     // Update visual state for current input
                     updateVisualState(input, input.checked);
+                    
+                    // Enable/disable sibling hidden inputs for grouped variations
+                    const inputId = input.id;
+                    document.querySelectorAll(`.sibling-option[data-parent="${inputId}"]`).forEach(s => {
+                        s.disabled = !input.checked;
+                    });
                     
                     // Update counters and calories
                     updateChoiceCounters();
