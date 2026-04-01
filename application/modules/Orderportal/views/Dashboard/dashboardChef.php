@@ -552,85 +552,73 @@
                                         <!-- Modern Options Grid -->
                                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                             <?php
+                                            // Group menu options by name to show each once
+                                            $groupedOptions = [];
                                             foreach ($menu['menu_options'] as $menu_option) {
                                                 if (in_array($menu_option['option_id'], $savedMenuWithOptions[$date][$category['id']][$menuId])) {
-                                                    // Get calories from the individual menu option, not the menu category
-                                                    $calories = htmlspecialchars($menu_option['menu_option_calorie'] ?? 'N/A');
-                                                    $optionName = htmlspecialchars($menu_option['menu_option_name']);
-                                                    ?>
-                                                    <div class="bg-white border border-gray-100 rounded-lg p-3 flex items-center justify-between hover:bg-gray-50 transition-colors duration-200 shadow-sm">
+                                                    $name = $menu_option['menu_option_name'] ?? '';
+                                                    if (!isset($groupedOptions[$name])) {
+                                                        $groupedOptions[$name] = [];
+                                                    }
+                                                    $groupedOptions[$name][] = $menu_option;
+                                                }
+                                            }
+                                            
+                                            foreach ($groupedOptions as $optionName => $variations) {
+                                                $optionNameEsc = htmlspecialchars($optionName);
+                                                $firstVariation = $variations[0];
+                                                $calories = htmlspecialchars($firstVariation['menu_option_calorie'] ?? 'N/A');
+                                                
+                                                // Collect all variations data for the modal
+                                                $variationsData = [];
+                                                $allAllergenNames = [];
+                                                foreach ($variations as $v) {
+                                                    $vCuisineNames = [];
+                                                    if (!empty($v['cuisineValues'])) {
+                                                        $cIds = is_string($v['cuisineValues']) ? json_decode($v['cuisineValues'], true) : (is_array($v['cuisineValues']) ? $v['cuisineValues'] : []);
+                                                        if (is_array($cIds) && isset($cuisineData)) {
+                                                            foreach ($cIds as $cid) {
+                                                                foreach ($cuisineData as $c) {
+                                                                    if ($c['id'] == $cid) { $vCuisineNames[] = $c['name']; break; }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    $vAllergenNames = [];
+                                                    if (!empty($v['allergenValues'])) {
+                                                        $aIds = is_string($v['allergenValues']) ? json_decode($v['allergenValues'], true) : (is_array($v['allergenValues']) ? $v['allergenValues'] : []);
+                                                        if (is_array($aIds) && isset($allergensData)) {
+                                                            foreach ($aIds as $aid) {
+                                                                foreach ($allergensData as $a) {
+                                                                    if ($a['id'] == $aid) { $vAllergenNames[] = $a['name']; break; }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    $allAllergenNames = array_merge($allAllergenNames, $vAllergenNames);
+                                                    $variationsData[] = [
+                                                        'cuisine' => !empty($vCuisineNames) ? implode(', ', $vCuisineNames) : 'Standard',
+                                                        'allergens' => !empty($vAllergenNames) ? implode(', ', $vAllergenNames) : 'None',
+                                                        'description' => $v['menu_option_description'] ?? '',
+                                                        'calories' => $v['menu_option_calorie'] ?? 'N/A',
+                                                    ];
+                                                }
+                                                $allAllergenNames = array_unique($allAllergenNames);
+                                                $hasAllergens = !empty($allAllergenNames);
+                                                $variationCount = count($variations);
+                                                $variationsJson = htmlspecialchars(json_encode($variationsData), ENT_QUOTES);
+                                                ?>
+                                                    <div class="bg-white border border-gray-100 rounded-lg p-3 flex items-center justify-between hover:bg-gray-50 transition-colors duration-200 shadow-sm cursor-pointer"
+                                                         onclick="showVariationsModal('<?php echo htmlspecialchars($optionName, ENT_QUOTES); ?>', '<?php echo $variationsJson; ?>')">
                                                         <div class="flex items-center space-x-2">
-                                                            <span class="font-medium text-gray-800 text-sm"><?php echo $optionName; ?></span>
+                                                            <span class="font-medium text-gray-800 text-sm"><?php echo $optionNameEsc; ?></span>
                                                             
-                                                            <?php
-                                                            // Get allergen names
-                                                            $allergenNames = [];
-                                                            if (!empty($menu_option['allergenValues'])) {
-                                                                $allergenIds = json_decode($menu_option['allergenValues'], true);
-                                                                if (is_array($allergenIds) && !empty($allergenIds) && isset($allergensData)) {
-                                                                    foreach ($allergenIds as $allergenId) {
-                                                                        foreach ($allergensData as $allergen) {
-                                                                            if ($allergen['id'] == $allergenId) {
-                                                                                $allergenNames[] = $allergen['name'];
-                                                                                break;
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                            $allergenText = !empty($allergenNames) ? implode(', ', $allergenNames) : '';
-                                                            
-                                                            // Get cuisine type from option's cuisineValues
-                                                            $cuisineNames = [];
-                                                            if (!empty($menu_option['cuisineValues'])) {
-                                                                $cuisineIds = json_decode($menu_option['cuisineValues'], true);
-                                                                if (is_array($cuisineIds) && !empty($cuisineIds) && isset($cuisineData)) {
-                                                                    foreach ($cuisineIds as $cuisineId) {
-                                                                        foreach ($cuisineData as $cuisine) {
-                                                                            if ($cuisine['id'] == $cuisineId) {
-                                                                                $cuisineNames[] = $cuisine['name'];
-                                                                                break;
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                            $cuisineText = !empty($cuisineNames) ? implode(', ', $cuisineNames) : '';
-                                                            ?>
-                                                            
-                                                            <?php if (!empty($menu_option['menu_option_description']) && trim($menu_option['menu_option_description']) !== ''): ?>
-                                                                <button type="button" 
-                                                                        class="info-icon-btn w-4 h-4 bg-blue-100 hover:bg-blue-200 rounded-full flex items-center justify-center transition-colors duration-200 cursor-pointer ml-1"
-                                                                        onclick="showMenuDescription('<?php echo htmlspecialchars(trim($menu_option['menu_option_description']), ENT_QUOTES); ?>')"
-                                                                        onmouseover="showTooltip(this, '<?php echo htmlspecialchars(trim($menu_option['menu_option_description']), ENT_QUOTES); ?>')"
-                                                                        onmouseout="hideTooltip()"
-                                                                        title="Click to view description">
-                                                                    <svg class="w-2.5 h-2.5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
-                                                                    </svg>
-                                                                </button>
+                                                            <?php if ($variationCount > 1): ?>
+                                                                <span class="inline-flex items-center justify-center w-5 h-5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold" title="<?php echo $variationCount; ?> variations"><?php echo $variationCount; ?></span>
                                                             <?php endif; ?>
                                                             
-                                                            <?php if (!empty($allergenText)): ?>
-                                                                <button type="button" 
-                                                                        class="allergen-icon-btn w-4 h-4 bg-red-100 hover:bg-red-200 rounded-full flex items-center justify-center transition-colors duration-200 cursor-pointer ml-1 text-red-600 text-xs font-bold"
-                                                                        onclick="showAllergens('<?php echo htmlspecialchars($allergenText, ENT_QUOTES); ?>')"
-                                                                        onmouseover="showTooltip(this, '<?php echo htmlspecialchars($allergenText, ENT_QUOTES); ?>')"
-                                                                        onmouseout="hideTooltip()"
-                                                                        title="Allergens: <?php echo htmlspecialchars($allergenText, ENT_QUOTES); ?>">
-                                                                    A
-                                                                </button>
-                                                            <?php endif; ?>
-                                                            
-                                                            <?php if (!empty($cuisineText)): ?>
-                                                                <button type="button" 
-                                                                        class="cuisine-icon-btn w-4 h-4 bg-green-100 hover:bg-green-200 rounded-full flex items-center justify-center transition-colors duration-200 cursor-pointer ml-1 text-green-600 text-xs font-bold"
-                                                                        onclick="showCuisine('<?php echo htmlspecialchars($cuisineText, ENT_QUOTES); ?>')"
-                                                                        onmouseover="showTooltip(this, '<?php echo htmlspecialchars($cuisineText, ENT_QUOTES); ?>')"
-                                                                        onmouseout="hideTooltip()"
-                                                                        title="Cuisine Type: <?php echo htmlspecialchars($cuisineText, ENT_QUOTES); ?>">
-                                                                    D
-                                                                </button>
+                                                            <?php if ($hasAllergens): ?>
+                                                                <span class="w-4 h-4 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-xs font-bold" title="Allergens: <?php echo htmlspecialchars(implode(', ', $allAllergenNames), ENT_QUOTES); ?>">A</span>
                                                             <?php endif; ?>
                                                         </div>
                                                         <div class="flex items-center space-x-1">
@@ -638,8 +626,7 @@
                                                             <span class="text-orange-500 text-xs font-medium">cal</span>
                                                         </div>
                                                     </div>
-                                                    <?php
-                                                }
+                                                <?php
                                             }
                                             ?>
                                         </div>
@@ -1328,6 +1315,63 @@ function showFilterFeedback(day, meal) {
             });
             
             document.body.appendChild(modal);
+        }
+
+        // Show variations modal for a menu option
+        function showVariationsModal(optionName, variationsJson) {
+            let variations;
+            try { variations = JSON.parse(variationsJson); } catch(e) { variations = []; }
+            if (!variations.length) return;
+
+            // If only 1 variation, still show the modal so cuisine info is visible
+            let rowsHTML = '';
+            variations.forEach(function(v) {
+                rowsHTML += '<tr>' +
+                    '<td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#334155;">' +
+                        '<span style="display:inline-block;padding:3px 10px;border-radius:12px;background:#dbeafe;color:#1e40af;font-size:12px;font-weight:500;">' + escapeHtmlChef(v.cuisine) + '</span>' +
+                    '</td>' +
+                    '<td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#334155;">' + escapeHtmlChef(v.description || '-') + '</td>' +
+                    '<td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#334155;">' +
+                        (v.allergens !== 'None' ? '<span style="color:#dc2626;font-weight:500;">' + escapeHtmlChef(v.allergens) + '</span>' : '<span style="color:#9ca3af;">None</span>') +
+                    '</td>' +
+                    '<td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#ea580c;font-weight:600;text-align:center;">' + escapeHtmlChef(v.calories) + '</td>' +
+                '</tr>';
+            });
+
+            const modal = document.createElement('div');
+            modal.className = 'variations-modal-backdrop';
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:20000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+            const closeModal = function() { modal.remove(); };
+
+            modal.innerHTML =
+                '<div style="background:white;border-radius:16px;padding:0;max-width:640px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.15);overflow:hidden;">' +
+                    '<div style="background:linear-gradient(135deg,#3b82f6,#2563eb);padding:18px 24px;display:flex;align-items:center;justify-content:space-between;">' +
+                        '<h3 style="margin:0;color:white;font-size:16px;font-weight:700;">' + escapeHtmlChef(optionName) + ' — Variations</h3>' +
+                        '<button style="background:rgba(255,255,255,0.2);border:none;color:white;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">&times;</button>' +
+                    '</div>' +
+                    '<div style="padding:0;">' +
+                        '<table style="width:100%;border-collapse:collapse;">' +
+                            '<thead><tr>' +
+                                '<th style="padding:10px 14px;background:#f8fafc;color:#64748b;font-size:11px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0;">Cuisine Type</th>' +
+                                '<th style="padding:10px 14px;background:#f8fafc;color:#64748b;font-size:11px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0;">Description</th>' +
+                                '<th style="padding:10px 14px;background:#f8fafc;color:#64748b;font-size:11px;font-weight:600;text-align:left;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0;">Allergens</th>' +
+                                '<th style="padding:10px 14px;background:#f8fafc;color:#64748b;font-size:11px;font-weight:600;text-align:center;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0;">Calories</th>' +
+                            '</tr></thead>' +
+                            '<tbody>' + rowsHTML + '</tbody>' +
+                        '</table>' +
+                    '</div>' +
+                '</div>';
+
+            modal.querySelector('button').addEventListener('click', closeModal);
+            modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+            document.body.appendChild(modal);
+        }
+
+        function escapeHtmlChef(str) {
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(str || ''));
+            return div.innerHTML;
         }
 
         // Auto-refresh chef dashboard every 15 minutes
