@@ -78,9 +78,9 @@
               <table class="table table-sm table-hover mb-0" id="variationsTable">
                 <thead class="table-dark text-white">
                   <tr>
-                    <th style="width:20%">Variations</th>
-                    <th style="width:22%">Ingredients / Description</th>
-                    <th style="width:16%">Nutritional Values</th>
+                    <th style="width:18%">Variations</th>
+                    <th style="width:30%">Ingredients / Description</th>
+                    <th style="width:10%">Nutritional Values</th>
                     <th style="width:20%">Allergens</th>
                     <th style="width:22%" class="text-center">Actions</th>
                   </tr>
