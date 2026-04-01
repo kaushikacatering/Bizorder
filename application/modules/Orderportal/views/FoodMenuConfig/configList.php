@@ -112,7 +112,12 @@
                                                         <?php if(!empty($moduleData['tableData'])) {  ?>
                                                         <?php foreach($moduleData['tableData'] as $listtableData){  ?>
                                                         <tr id="row_<?php echo  $listtableData['id']; ?>" >
-                                                            <td class="name"><?php echo $listtableData['name']; ?></td>
+                                                            <td class="name">
+                                                                <?php echo $listtableData['name']; ?>
+                                                                <?php if ($modulename === 'cuisine' && !empty($listtableData['diet_short_code'])): ?>
+                                                                    <span class="badge bg-info ms-2"><?php echo htmlspecialchars($listtableData['diet_short_code']); ?></span>
+                                                                <?php endif; ?>
+                                                            </td>
                                                             
                                                             
                                                             
@@ -126,7 +131,7 @@
                                                            
                                                             <td>
                                                                 <div class="d-flex flex-wrap gap-1 justify-content-center">
-                                                                    <a onclick="showEditModal('<?php echo $listtableData['name']; ?>',<?php echo $listtableData['id']; ?>, '<?php echo $modulename ?>','<?php echo $listtableData['inputType']; ?>')" 
+                                                                    <a onclick="showEditModal('<?php echo htmlspecialchars($listtableData['name'], ENT_QUOTES); ?>',<?php echo $listtableData['id']; ?>, '<?php echo $modulename ?>','<?php echo $listtableData['inputType']; ?>','<?php echo htmlspecialchars($listtableData['diet_short_code'] ?? '', ENT_QUOTES); ?>')" 
                                                                        class="btn btn-sm btn-secondary edit-item-btn" title="Edit">
                                                                         <i class="ri-edit-box-line align-middle fs-12"></i>
                                                                         <span class="d-none d-md-inline ms-1">Edit</span>
@@ -349,6 +354,12 @@
                                                                     </div>
                                                                 </div>
                                                                 
+                                                                <div id="addShortCodeWrap" class="mt-3" style="display:none;">
+                                                                    <label for="input_diet_short_code" class="form-label">Diet Short Code</label>
+                                                                    <input type="text" id="input_diet_short_code" class="form-control" placeholder="e.g. GF, VG, HS" maxlength="10">
+                                                                    <small class="text-muted">Short code shown on production form (e.g. GF for Gluten Free)</small>
+                                                                </div>
+                                                                
                                                             </div>
                                                            
                                                               
@@ -388,6 +399,12 @@
                                                                     Please enter category name
                                                                     </div>
                                                                 </div>
+                                                                
+                                                                <div id="editShortCodeWrap" class="mt-3" style="display:none;">
+                                                                    <label for="edited_diet_short_code" class="form-label">Diet Short Code</label>
+                                                                    <input type="text" id="edited_diet_short_code" class="form-control" placeholder="e.g. GF, VG, HS" maxlength="10">
+                                                                    <small class="text-muted">Short code shown on production form (e.g. GF for Gluten Free)</small>
+                                                                </div>
                                                             </div>
                                                             
                                                            
@@ -421,6 +438,13 @@
         $(".modal-title").html('Add '+label)
         $(".modalLabel").html(label+' Name');
         $("#menuListType").val(listType);
+        $("#input_config_name").val('');
+        $("#input_diet_short_code").val('');
+        if (listType === 'cuisine') {
+            $("#addShortCodeWrap").show();
+        } else {
+            $("#addShortCodeWrap").hide();
+        }
        $("#flipModal").modal('show'); 
        
        
@@ -464,13 +488,20 @@
     //             }]
     //     });
         
-        function showEditModal(configName,configId,listtype,inputType){
+        function showEditModal(configName,configId,listtype,inputType,dietShortCode){
             $(".editModalTitle").html('Update '+ucfirst(listtype))
             $(".editModalLabel").html(ucfirst(listtype)+' Name');
             $("#edited_input_config_name").val(configName);
             $("#menuListTypeEdit").val(listtype);
             $("#configIdToUpdate").val(configId);
             $(".editinputType").val(inputType);
+            if (listtype === 'cuisine') {
+                $("#editShortCodeWrap").show();
+                $("#edited_diet_short_code").val(dietShortCode || '');
+            } else {
+                $("#editShortCodeWrap").hide();
+                $("#edited_diet_short_code").val('');
+            }
             $("#flipEditModal").modal('show');
         }
         function addMenuConfig(){
@@ -488,10 +519,15 @@
               inputType =   $("#inputType").val();
             }
             
+            let dietShortCode = '';
+            if (listType === 'cuisine') {
+                dietShortCode = $("#input_diet_short_code").val().trim();
+            }
+            
             $.ajax({
                  type: "POST",
                  url: "Configfoodmenu/add",
-                 data: 'name=' + configName + '&listtype=' + listType+'&inputType='+inputType, 
+                 data: 'name=' + configName + '&listtype=' + listType+'&inputType='+inputType+'&diet_short_code='+encodeURIComponent(dietShortCode), 
                  success: function(data){
                     location.reload();
                 }
@@ -512,10 +548,15 @@
             if($("#updatedInputType").val() !=''){
               inputType =   $("#updatedInputType").val();
             }
+            let editDietShortCode = '';
+            if (listType === 'cuisine') {
+                editDietShortCode = $("#edited_diet_short_code").val().trim();
+            }
+            
             $.ajax({
                  type: "POST",
                  url: "Configfoodmenu/updateConfig",
-                  data: 'name=' + configName + '&listtype=' + listType+'&id='+id+'&inputType='+inputType,
+                  data: 'name=' + configName + '&listtype=' + listType+'&id='+id+'&inputType='+inputType+'&diet_short_code='+encodeURIComponent(editDietShortCode),
                  success: function(data){
                     location.reload();
                 }

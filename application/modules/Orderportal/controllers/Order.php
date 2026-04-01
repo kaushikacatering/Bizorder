@@ -2470,10 +2470,17 @@ class Order extends MY_Controller
         
         // Fetch cuisine types for production form display
         $conditionsCuisine = array('listtype' => 'cuisine', 'is_deleted' => 0);
-        $cuisineList = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $conditionsCuisine);
+        $cuisineList = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name', 'diet_short_code'], $conditionsCuisine);
         $cuisineMap = [];
-        foreach ($cuisineList as $c) { $cuisineMap[$c['id']] = $c['name']; }
+        $cuisineShortCodeMap = [];
+        foreach ($cuisineList as $c) {
+            $cuisineMap[$c['id']] = $c['name'];
+            if (!empty($c['diet_short_code'])) {
+                $cuisineShortCodeMap[$c['id']] = $c['diet_short_code'];
+            }
+        }
         $data['cuisineMap'] = $cuisineMap;
+        $data['cuisineShortCodeMap'] = $cuisineShortCodeMap;
         
         $this->load->view('general/header');
         $this->load->view('Orders/viewPatientOrder', $data);

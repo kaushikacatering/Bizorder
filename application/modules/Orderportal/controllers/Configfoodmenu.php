@@ -112,6 +112,9 @@ class Configfoodmenu extends MY_Controller
 						'location_id' => $this->session->userdata('default_location_id'),
 						'created_date' => date('Y-m-d'),
 					);
+					if (!empty($this->POST['diet_short_code'])) {
+						$category_data['diet_short_code'] = $this->POST['diet_short_code'];
+					}
 		$this->session->set_userdata('listtype', $this->POST['listtype']);
 		$result = $this->configfoodmenu_model->addFoodMenuConfig($category_data);
 		echo $result;

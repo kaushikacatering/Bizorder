@@ -39,6 +39,9 @@ class Configfoodmenu_model extends CI_Model{
 	     	'inputType' => $data['inputType'],
 	    	'updated_date'=> date("Y-m-d")
 		      );
+			if (isset($data['diet_short_code'])) {
+				$Newdata['diet_short_code'] = $data['diet_short_code'];
+			}
 
            $this->tenantDb->set($Newdata);
            $this->tenantDb->where('id', $data['id']);
