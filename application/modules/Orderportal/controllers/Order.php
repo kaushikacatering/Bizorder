@@ -2426,6 +2426,7 @@ class Order extends MY_Controller
                 'menu_item_name'   => $menuItemName,
                 'menu_option_name' => $row['menu_option_name'],
                 'menu_colour' => $row['menu_color'],
+                'cuisineValues' => $row['cuisineValues'] ?? '[]',
                 'subcategory_name' => $subcategoryName,
                 'qty'              => (int)$row['total_qty'], // Pending quantity
                 'completed_qty'    => (int)$row['completed_qty'], // Completed quantity
@@ -2467,7 +2468,13 @@ class Order extends MY_Controller
         $conditionsC = array('is_deleted' => 0 ,'listtype' => 'category');
         $data['categories'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig','',$conditionsC);
         
-        // echo "<pre>"; print_r($data['orderWithNotes']); exit;
+        // Fetch cuisine types for production form display
+        $conditionsCuisine = array('listtype' => 'cuisine', 'is_deleted' => 0);
+        $cuisineList = $this->common_model->fetchRecordsDynamically('foodmenuconfig', ['id', 'name'], $conditionsCuisine);
+        $cuisineMap = [];
+        foreach ($cuisineList as $c) { $cuisineMap[$c['id']] = $c['name']; }
+        $data['cuisineMap'] = $cuisineMap;
+        
         $this->load->view('general/header');
         $this->load->view('Orders/viewPatientOrder', $data);
         $this->load->view('general/footer');

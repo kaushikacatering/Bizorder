@@ -295,7 +295,7 @@ function addVariationRow() {
 
     tr.innerHTML =
         '<td class="v-cuisine-cell"></td>' +
-        '<td><input type="text" class="form-control form-control-sm v-desc-input" maxlength="200" placeholder="Ingredients / Description"></td>' +
+        '<td><textarea class="form-control form-control-sm v-desc-input" rows="2" style="resize:vertical;min-height:38px;" placeholder="Ingredients / Description"></textarea></td>' +
         '<td><input type="text" class="form-control form-control-sm v-nutrition-input" placeholder="Nutritional values"></td>' +
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +
@@ -324,7 +324,7 @@ function editVariation(btn) {
 
     row.innerHTML =
         '<td class="v-cuisine-cell"></td>' +
-        '<td><input type="text" class="form-control form-control-sm v-desc-input" maxlength="200" value="' + escapeAttr(desc) + '"></td>' +
+        '<td><textarea class="form-control form-control-sm v-desc-input" rows="2" style="resize:vertical;min-height:38px;">' + escapeHtml(desc) + '</textarea></td>' +
         '<td><input type="text" class="form-control form-control-sm v-nutrition-input" value="' + escapeAttr(nutrition) + '"></td>' +
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +

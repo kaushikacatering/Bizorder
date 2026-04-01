@@ -1385,15 +1385,29 @@
             }).filter(Boolean);
         }
 
-        // Helper: check if any of the patient's cuisine preferences match any variation of a menu
-        function menuHasMatchingVariation(menu, patientCuisineIds) {
+        // Helper: check if any variation of a menu matches patient's cuisine preferences AND does not conflict with patient allergies
+        function menuHasMatchingVariation(menu, patientCuisineIds, patientAllergyIds) {
             if (!menu.variations || menu.variations.length === 0) return true; // No variations = show everything (backward compat)
             if (!patientCuisineIds || patientCuisineIds.length === 0) return true; // No preference = show everything
             const patientIds = patientCuisineIds.map(String);
+            const allergyIds = (patientAllergyIds || []).map(String);
             return menu.variations.some(v => {
                 try {
+                    // Check cuisine match: at least one cuisine must match patient dietary preferences
                     const vCuisineIds = (typeof v.cuisine_type_ids === 'string' ? JSON.parse(v.cuisine_type_ids) : v.cuisine_type_ids) || [];
-                    return vCuisineIds.some(cid => patientIds.includes(String(cid)));
+                    const cuisineMatch = vCuisineIds.some(cid => patientIds.includes(String(cid)));
+                    if (!cuisineMatch) return false;
+                    
+                    // Check allergen exclusion: variation allergens must NOT overlap with patient allergies
+                    if (allergyIds.length > 0) {
+                        const vAllergenIds = (typeof v.allergenValues === 'string' ? JSON.parse(v.allergenValues) : v.allergenValues) || [];
+                        if (vAllergenIds.length > 0) {
+                            const hasConflict = allergyIds.some(aid => vAllergenIds.some(vid => String(aid) === String(vid)));
+                            if (hasConflict) return false;
+                        }
+                    }
+                    
+                    return true; // Cuisine matches and no allergen conflict
                 } catch(e) { return false; }
             });
         }
@@ -2818,13 +2832,17 @@
                     }
 
                     // VARIATION FILTERING: If patient has dietary preferences and menus have variations,
-                    // only show menus that have a matching variation for the patient's diet
+                    // only show menus that have a matching variation for the patient's diet AND no allergen conflict
                     const currentBed = bedLists.find(b => b.id == bedId);
                     if (currentBed && currentBed.patient_dietary_preferences && currentBed.patient_dietary_preferences !== 'null' && currentBed.patient_dietary_preferences !== '[]') {
                         try {
                             const patientCuisineIds = JSON.parse(currentBed.patient_dietary_preferences);
+                            let patientAllergyIds = [];
+                            if (currentBed.patient_allergies && currentBed.patient_allergies !== 'null' && currentBed.patient_allergies !== '[]') {
+                                try { patientAllergyIds = JSON.parse(currentBed.patient_allergies) || []; } catch(e2) { patientAllergyIds = []; }
+                            }
                             if (Array.isArray(patientCuisineIds) && patientCuisineIds.length > 0) {
-                                categoryMenus = categoryMenus.filter(m => menuHasMatchingVariation(m, patientCuisineIds));
+                                categoryMenus = categoryMenus.filter(m => menuHasMatchingVariation(m, patientCuisineIds, patientAllergyIds));
                             }
                         } catch(e) { /* ignore parse errors */ }
                     }
@@ -2886,7 +2904,15 @@
                                             const patientAllergies = JSON.parse(bed.patient_allergies);
                                             if (patientAllergies && patientAllergies.length > 0) {
                                                 safeOptionsCount = allOptionsInPlan.filter(option => {
-                                                    const itemAllergens = option.allergenValues ? JSON.parse(option.allergenValues) : [];
+                                                    let itemAllergensParsed = [];
+                                                    if (option.allergenValues) {
+                                                        if (typeof option.allergenValues === 'string') {
+                                                            try { itemAllergensParsed = JSON.parse(option.allergenValues); } catch(e) { itemAllergensParsed = []; }
+                                                        } else {
+                                                            itemAllergensParsed = option.allergenValues;
+                                                        }
+                                                    }
+                                                    const itemAllergens = Array.isArray(itemAllergensParsed) ? itemAllergensParsed : [];
                                                     if (!itemAllergens || itemAllergens.length === 0) return true;
                                                     const hasConflict = patientAllergies.some(pa => itemAllergens.some(ia => String(pa) === String(ia)));
                                                     return !hasConflict;
@@ -2985,7 +3011,15 @@
                                                             try {
                                                                 const patientAllergies = JSON.parse(bed.patient_allergies);
                                                                 if (patientAllergies && patientAllergies.length > 0) {
-                                                                    const itemAllergens = option.allergenValues ? JSON.parse(option.allergenValues) : [];
+                                                                    let itemAllergensParsed = [];
+                                                                    if (option.allergenValues) {
+                                                                        if (typeof option.allergenValues === 'string') {
+                                                                            try { itemAllergensParsed = JSON.parse(option.allergenValues); } catch(e) { itemAllergensParsed = []; }
+                                                                        } else {
+                                                                            itemAllergensParsed = option.allergenValues;
+                                                                        }
+                                                                    }
+                                                                    const itemAllergens = Array.isArray(itemAllergensParsed) ? itemAllergensParsed : [];
                                                                     if (itemAllergens && itemAllergens.length > 0) {
                                                                         // Check for conflict: does item contain something patient is allergic to?
                                                                         const hasConflict = patientAllergies.some(patientAllergyId => 
@@ -3147,7 +3181,15 @@
                                             try {
                                                 const patientAllergies = JSON.parse(bed.patient_allergies);
                                                 if (patientAllergies && patientAllergies.length > 0) {
-                                                    const itemAllergens = option.allergenValues ? JSON.parse(option.allergenValues) : [];
+                                                    let itemAllergensParsed = [];
+                                                    if (option.allergenValues) {
+                                                        if (typeof option.allergenValues === 'string') {
+                                                            try { itemAllergensParsed = JSON.parse(option.allergenValues); } catch(e) { itemAllergensParsed = []; }
+                                                        } else {
+                                                            itemAllergensParsed = option.allergenValues;
+                                                        }
+                                                    }
+                                                    const itemAllergens = Array.isArray(itemAllergensParsed) ? itemAllergensParsed : [];
                                                     if (itemAllergens && itemAllergens.length > 0) {
                                                         matchesAllergen = !patientAllergies.some(pa => itemAllergens.some(ia => String(pa) === String(ia)));
                                                     }

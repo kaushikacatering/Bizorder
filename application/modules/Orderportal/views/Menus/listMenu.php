@@ -289,8 +289,12 @@
                                                                     <div class="menu-options-grid">
                                                                         <?php 
                                                                         if (!empty($menu['menu_options'])) {
+                                                                            $shownNames = [];
                                                                             foreach($menu['menu_options'] as $option) {
-                                                                                $optionName = htmlspecialchars($option['menu_option_name'] ?? '');
+                                                                                $name = $option['menu_option_name'] ?? '';
+                                                                                if (in_array($name, $shownNames)) continue;
+                                                                                $shownNames[] = $name;
+                                                                                $optionName = htmlspecialchars($name);
                                                                                 echo '<div class="menu-option-card">';
                                                                                 echo '<div class="option-indicator"></div>';
                                                                                 echo '<div class="option-content">';

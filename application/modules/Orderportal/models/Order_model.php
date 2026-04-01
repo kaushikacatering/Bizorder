@@ -101,6 +101,7 @@ function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) 
         opo.option_id,
         mo.menu_option_name,
         mo.menu_color,
+        mo.cuisineValues,
         md.name as food_category_name,
         SUM(CASE WHEN opo.status = 0 THEN opo.quantity ELSE 0 END) as total_qty,
         SUM(CASE WHEN opo.status = 1 THEN opo.quantity ELSE 0 END) as completed_qty,

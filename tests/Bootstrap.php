@@ -485,6 +485,7 @@ class CITestCase extends \PHPUnit\Framework\TestCase
                 md.name as menu_item_name,
                 opo.option_id,
                 mo.menu_option_name,
+                mo.cuisineValues,
                 SUM(opo.quantity) as total_qty,
                 COUNT(DISTINCT opo.bed_id) as bed_count,
                 GROUP_CONCAT(DISTINCT opo.bed_id) as bed_ids

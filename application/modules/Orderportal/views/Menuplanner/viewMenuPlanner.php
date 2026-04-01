@@ -277,28 +277,61 @@ function getAllergenNames($allergenValues, $allergies) {
                                                     <div class="mb-3"> <!-- Reduced mb-6 to mb-3 -->
                                                         <h5 class="text-gray-800 font-semibold text-sm mb-2"><?php echo htmlspecialchars($menu['menu_name']); ?></h5> <!-- Reduced text size, mb-3 to mb-2 -->
                                                         <?php if (isset($menu['menu_options']) && !empty($menu['menu_options'])) { ?>
-                                                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"> <!-- Reduced gap-3 to gap-2 -->
-                                                                <?php foreach ($menu['menu_options'] as $menu_option) { ?>
-                                                                    <div class="bg-gray-50 hover:bg-gray-100 transition-colors rounded-md p-2 flex items-center"> <!-- Reduced p-3 to p-2 -->
-                                                                        <?php
-                                                                        if(isset($savedMenuWithOptions[$categoryId][$menuId]) && !empty(isset($savedMenuWithOptions[$categoryId][$menuId]))){
-                                                                            $isChecked = in_array($menu_option['option_id'], $savedMenuWithOptions[$categoryId][$menuId]) ? 'checked' : $defaultAllChecked;
+                                                            <?php
+                                                            // Group menu options by menu_option_name to avoid duplicate display
+                                                            $groupedOptions = [];
+                                                            foreach ($menu['menu_options'] as $mo) {
+                                                                $optName = $mo['menu_option_name'];
+                                                                if (!isset($groupedOptions[$optName])) {
+                                                                    $groupedOptions[$optName] = [
+                                                                        'option_ids' => [],
+                                                                        'menu_option_name' => $optName,
+                                                                        'menu_option_description' => $mo['menu_option_description'] ?? '',
+                                                                        'allergenValues' => $mo['allergenValues'] ?? '',
+                                                                    ];
+                                                                }
+                                                                $groupedOptions[$optName]['option_ids'][] = $mo['option_id'];
+                                                                // Merge descriptions and allergens from all variations
+                                                                if (empty($groupedOptions[$optName]['menu_option_description']) && !empty($mo['menu_option_description'])) {
+                                                                    $groupedOptions[$optName]['menu_option_description'] = $mo['menu_option_description'];
+                                                                }
+                                                            }
+                                                            ?>
+                                                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                                                <?php foreach ($groupedOptions as $optName => $group) {
+                                                                    $firstOptionId = $group['option_ids'][0];
+                                                                    // Check if ANY option_id in this group was saved
+                                                                    $groupChecked = $defaultAllChecked;
+                                                                    if (isset($savedMenuWithOptions[$categoryId][$menuId]) && !empty($savedMenuWithOptions[$categoryId][$menuId])) {
+                                                                        $hasAnySaved = false;
+                                                                        foreach ($group['option_ids'] as $oid) {
+                                                                            if (in_array($oid, $savedMenuWithOptions[$categoryId][$menuId])) {
+                                                                                $hasAnySaved = true;
+                                                                                break;
+                                                                            }
                                                                         }
-                                                                        ?>
-                                                                        <input type="checkbox" id="<?php echo $categoryId ?>_<?php echo $menu_option['option_id']; ?>" name="optionMenus[<?php echo $categoryId ?>][<?php echo $menuId; ?>][]" value="<?php echo $menu_option['option_id']; ?>" class="menu-option-checkbox h-4 w-4 text-chef-purple rounded border-gray-300 focus:ring-chef-purple mr-2" <?php echo $isChecked; ?> <?php echo ($this->session->userdata('role_id') == 3) ? 'disabled' : ''; ?>> <!-- Disabled for nurses -->
-                                                                        <label for="<?php echo $categoryId ?>_<?php echo $menu_option['option_id']; ?>" class="text-gray-700 <?php echo ($this->session->userdata('role_id') == 3) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'; ?> text-sm"><?php echo htmlspecialchars($menu_option['menu_option_name']); ?></label>
+                                                                        $groupChecked = $hasAnySaved ? 'checked' : $defaultAllChecked;
+                                                                    }
+                                                                ?>
+                                                                    <div class="bg-gray-50 hover:bg-gray-100 transition-colors rounded-md p-2 flex items-center">
+                                                                        <input type="checkbox" id="<?php echo $categoryId ?>_<?php echo $firstOptionId; ?>" class="menu-option-checkbox menu-option-group-toggle h-4 w-4 text-chef-purple rounded border-gray-300 focus:ring-chef-purple mr-2" data-group-ids="<?php echo htmlspecialchars(implode(',', $group['option_ids'])); ?>" data-category-id="<?php echo $categoryId; ?>" data-menu-id="<?php echo $menuId; ?>" <?php echo $groupChecked; ?> <?php echo ($this->session->userdata('role_id') == 3) ? 'disabled' : ''; ?>>
+                                                                        <?php // Hidden inputs for ALL option_ids in the group (submitted when checked) ?>
+                                                                        <?php foreach ($group['option_ids'] as $oid) { ?>
+                                                                            <input type="hidden" class="grouped-option-input" name="optionMenus[<?php echo $categoryId; ?>][<?php echo $menuId; ?>][]" value="<?php echo $oid; ?>" <?php echo ($groupChecked === 'checked') ? '' : 'disabled'; ?>>
+                                                                        <?php } ?>
+                                                                        <label for="<?php echo $categoryId ?>_<?php echo $firstOptionId; ?>" class="text-gray-700 <?php echo ($this->session->userdata('role_id') == 3) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'; ?> text-sm"><?php echo htmlspecialchars($group['menu_option_name']); ?></label>
                                                                         
                                                                         <!-- Info and Allergy Icons -->
                                                                         <span class="menu-icon-wrapper">
-                                                                            <?php if (!empty($menu_option['menu_option_description'])): ?>
+                                                                            <?php if (!empty($group['menu_option_description'])): ?>
                                                                                 <span class="menu-info-icon">
                                                                                     <i class="ri-information-line"></i>
-                                                                                    <span class="menu-tooltip"><?php echo htmlspecialchars($menu_option['menu_option_description']); ?></span>
+                                                                                    <span class="menu-tooltip"><?php echo htmlspecialchars($group['menu_option_description']); ?></span>
                                                                                 </span>
                                                                             <?php endif; ?>
                                                                             
                                                                             <?php 
-                                                                            $allergenNames = getAllergenNames($menu_option['allergenValues'], $allergies);
+                                                                            $allergenNames = getAllergenNames($group['allergenValues'], $allergies);
                                                                             if (!empty($allergenNames)): 
                                                                             ?>
                                                                                 <span class="menu-allergy-icon">
@@ -488,6 +521,18 @@ input[type="checkbox"].h-4 {
 
           <script>
 document.addEventListener('DOMContentLoaded', function () {
+    // Toggle grouped hidden inputs when group checkbox is checked/unchecked
+    document.querySelectorAll('.menu-option-group-toggle').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+            var container = this.closest('.flex.items-center');
+            if (!container) return;
+            var hiddenInputs = container.querySelectorAll('.grouped-option-input');
+            hiddenInputs.forEach(function(input) {
+                input.disabled = !cb.checked;
+            });
+        });
+    });
+    
     // 🔒 CRITICAL FIX: Prevent accidental form submission via Enter key or natural form submit
     // This prevents published menus from being accidentally updated
     const menuPlannerForm = document.getElementById('menuPlannerForm');

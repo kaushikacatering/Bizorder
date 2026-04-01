@@ -404,7 +404,22 @@
                                                     <span class="text-lg font-bold text-gray-800 item-name tracking-wide">
                                                         <?php echo htmlspecialchars($item['menu_option_name']); ?>
                                                     </span>
-                                                    
+                                                    <?php
+                                                    // Display cuisine type badges
+                                                    $rawCuisine = $item['cuisineValues'] ?? '[]';
+                                                    $cuisineIds = is_string($rawCuisine) ? json_decode($rawCuisine, true) : (is_array($rawCuisine) ? $rawCuisine : []);
+                                                    if (!empty($cuisineIds) && !empty($cuisineMap)):
+                                                        foreach ($cuisineIds as $cid):
+                                                            if (isset($cuisineMap[$cid])):
+                                                    ?>
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        <?php echo htmlspecialchars($cuisineMap[$cid]); ?>
+                                                    </span>
+                                                    <?php
+                                                            endif;
+                                                        endforeach;
+                                                    endif;
+                                                    ?>
                                                     
                                                 </div>
                                     <?php 
