@@ -218,7 +218,7 @@ function getAllergenNames($allergenValues, $allergies) {
                                       <button id="saveBtn" class="btn btn-success" onclick="save(this,'Save')">
                                           <i class="ri-save-line align-bottom me-1"></i>Update
                                       </button>
-                                  <?php } else { $isChecked = 'checked'; ?>
+                                  <?php } else { $isChecked = ''; ?>
                                       <button id="saveBtn" class="btn btn-success" onclick="save(this,'Save')" <?php echo !isset($selectedDate) || empty($selectedDate) ? 'disabled' : ''; ?>>
                                           <i class="ri-save-line align-bottom me-1"></i>Save
                                       </button>

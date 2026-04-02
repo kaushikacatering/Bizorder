@@ -478,6 +478,16 @@ label span[style*="color: #ef4444"] {
                                             </div>
                                           
                                             
+                                            <!-- Sort Order -->
+                                            <div class="col-span-1">
+                                                <label for="sort_order" class="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+                                                <div class="relative">
+                                                    <input type="number" id="sort_order" name="sort_order" min="0" step="1" class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500" 
+                                                           value="<?php echo set_value('sort_order', isset($menu['sort_order']) ? htmlspecialchars($menu['sort_order']) : '0'); ?>" placeholder="e.g. 1, 2, 3...">
+                                                </div>
+                                                <p class="text-xs text-gray-500 mt-1">Lower numbers appear first on the menu list.</p>
+                                            </div>
+                                            
                                             <!-- Description -->
                                             
                                         </div>

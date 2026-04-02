@@ -359,6 +359,7 @@ class Configfoodmenu extends MY_Controller
             'is_main_menu' => $this->input->post('is_main_menu'), // no other restricted menu can be ordred along with this main menu
             'cuisine' => $this->input->post('cuisine'),
             'description' => $this->input->post('description'),
+            'sort_order' => (int) $this->input->post('sort_order'),
             'status' => 1,
             'is_deleted' => 0,
             'date_updated' => date('Y-m-d')

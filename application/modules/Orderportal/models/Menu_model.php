@@ -581,6 +581,7 @@ return $query->result_array();
         $this->tenantDb->where('mo.is_deleted', 0);
         $this->tenantDb->where('mo.status', 1);
         $this->tenantDb->group_by(['mdto.main_menu_id', 'mo.menu_option_name']);
+        $this->tenantDb->order_by('md.sort_order', 'ASC');
         $this->tenantDb->order_by('md.name', 'ASC');
         $this->tenantDb->order_by('mo.menu_option_name', 'ASC');
         $query = $this->tenantDb->get();

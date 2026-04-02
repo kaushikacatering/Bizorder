@@ -1386,17 +1386,28 @@
         }
 
         // Helper: check if any variation of a menu matches patient's cuisine preferences AND does not conflict with patient allergies
+        // Rules:
+        // 1) Patient has preferences (e.g. ["GF","DF"]): only match variations with EXACTLY that cuisine combination, exclude allergen conflicts
+        // 2) Patient has NO preferences: only match "standard" variations (empty cuisine_type_ids), but still check allergens
+        // 3) Single preference: exact match with just that 1 cuisine
         function menuHasMatchingVariation(menu, patientCuisineIds, patientAllergyIds) {
             if (!menu.variations || menu.variations.length === 0) return true; // No variations = show everything (backward compat)
-            if (!patientCuisineIds || patientCuisineIds.length === 0) return true; // No preference = show everything
-            const patientIds = patientCuisineIds.map(String);
+            const patientIds = (patientCuisineIds || []).map(String).sort();
             const allergyIds = (patientAllergyIds || []).map(String);
             return menu.variations.some(v => {
                 try {
-                    // Check cuisine match: at least one cuisine must match patient dietary preferences
                     const vCuisineIds = (typeof v.cuisine_type_ids === 'string' ? JSON.parse(v.cuisine_type_ids) : v.cuisine_type_ids) || [];
-                    const cuisineMatch = vCuisineIds.some(cid => patientIds.includes(String(cid)));
-                    if (!cuisineMatch) return false;
+                    const vCuisineStrs = vCuisineIds.map(String).sort();
+                    
+                    // EXACT SET MATCH for cuisine:
+                    if (patientIds.length === 0) {
+                        // No dietary preferences: only match standard variations (empty cuisine)
+                        if (vCuisineStrs.length !== 0) return false;
+                    } else {
+                        // Has dietary preferences: variation must have EXACTLY the same set of cuisines
+                        if (vCuisineStrs.length !== patientIds.length) return false;
+                        if (!patientIds.every((id, i) => id === vCuisineStrs[i])) return false;
+                    }
                     
                     // Check allergen exclusion: variation allergens must NOT overlap with patient allergies
                     if (allergyIds.length > 0) {
@@ -1407,7 +1418,7 @@
                         }
                     }
                     
-                    return true; // Cuisine matches and no allergen conflict
+                    return true;
                 } catch(e) { return false; }
             });
         }
@@ -2831,20 +2842,23 @@
                         categoryMenus = menuList.filter(m => m.category_ids && m.category_ids.includes(category.id));
                     }
 
-                    // VARIATION FILTERING: If patient has dietary preferences and menus have variations,
-                    // only show menus that have a matching variation for the patient's diet AND no allergen conflict
+                    // VARIATION FILTERING: Apply cuisine exact-match + allergen filtering for ALL patients
+                    // - Patient with preferences: show only menus with exact cuisine match
+                    // - Patient with no preferences: show only menus with standard variation (empty cuisine)
+                    // - Always exclude allergen conflicts
                     const currentBed = bedLists.find(b => b.id == bedId);
-                    if (currentBed && currentBed.patient_dietary_preferences && currentBed.patient_dietary_preferences !== 'null' && currentBed.patient_dietary_preferences !== '[]') {
-                        try {
-                            const patientCuisineIds = JSON.parse(currentBed.patient_dietary_preferences);
-                            let patientAllergyIds = [];
-                            if (currentBed.patient_allergies && currentBed.patient_allergies !== 'null' && currentBed.patient_allergies !== '[]') {
-                                try { patientAllergyIds = JSON.parse(currentBed.patient_allergies) || []; } catch(e2) { patientAllergyIds = []; }
-                            }
-                            if (Array.isArray(patientCuisineIds) && patientCuisineIds.length > 0) {
-                                categoryMenus = categoryMenus.filter(m => menuHasMatchingVariation(m, patientCuisineIds, patientAllergyIds));
-                            }
-                        } catch(e) { /* ignore parse errors */ }
+                    if (currentBed) {
+                        let patientCuisineIds = [];
+                        let patientAllergyIds = [];
+                        if (currentBed.patient_dietary_preferences && currentBed.patient_dietary_preferences !== 'null' && currentBed.patient_dietary_preferences !== '[]') {
+                            try { patientCuisineIds = JSON.parse(currentBed.patient_dietary_preferences) || []; } catch(e) {}
+                        }
+                        if (currentBed.patient_allergies && currentBed.patient_allergies !== 'null' && currentBed.patient_allergies !== '[]') {
+                            try { patientAllergyIds = JSON.parse(currentBed.patient_allergies) || []; } catch(e) {}
+                        }
+                        if (!Array.isArray(patientCuisineIds)) patientCuisineIds = [];
+                        if (!Array.isArray(patientAllergyIds)) patientAllergyIds = [];
+                        categoryMenus = categoryMenus.filter(m => menuHasMatchingVariation(m, patientCuisineIds, patientAllergyIds));
                     }
                     
                     if (categoryMenus.length === 0) {
@@ -2953,55 +2967,36 @@
                                                         const bed = bedLists.find(b => b.id == bedId);
                                                         if (!bed) return true;
                                                         
-                                                        // CUISINE FILTERING: Show items that match patient dietary preferences
+                                                        // CUISINE FILTERING (EXACT SET MATCH):
+                                                        // - Patient has preferences: show only items with EXACTLY that cuisine combination
+                                                        // - Patient has NO preferences: show only standard items (empty cuisine)
                                                         let matchesCuisine = true;
-                                                        if (bed.patient_dietary_preferences && bed.patient_dietary_preferences !== 'null' && bed.patient_dietary_preferences !== '[]' && bed.patient_dietary_preferences !== null) {
-                                                            try {
-                                                                const patientCuisinesParsed = JSON.parse(bed.patient_dietary_preferences);
-                                                                // Ensure patientCuisines is an array
-                                                                const patientCuisines = Array.isArray(patientCuisinesParsed) ? patientCuisinesParsed : [];
-                                                                if (patientCuisines && patientCuisines.length > 0) {
-                                                                    // Parse item cuisines - handle both string JSON and array formats
-                                                                    let itemCuisinesParsed = [];
-                                                                    if (option.cuisineValues) {
-                                                                        if (typeof option.cuisineValues === 'string') {
-                                                                            try {
-                                                                                itemCuisinesParsed = JSON.parse(option.cuisineValues);
-                                                                            } catch (e) {
-                                                                                itemCuisinesParsed = [];
-                                                                            }
-                                                                        } else {
-                                                                            itemCuisinesParsed = option.cuisineValues;
-                                                                        }
-                                                                    }
-                                                                    // Ensure itemCuisines is an array
-                                                                    const itemCuisines = Array.isArray(itemCuisinesParsed) ? itemCuisinesParsed : [];
-                                                                    // DEBUG: Uncomment to see filtering in action
-                                                                    // console.log('Patient cuisines:', patientCuisines, 'Item cuisines:', itemCuisines, 'Option:', option.menu_option_name);
-                                                                    // CUISINE FILTERING LOGIC (MULTI-SELECT SUPPORTED):
-                                                                    // - If patient has dietary preferences, show ONLY items that match those preferences
-                                                                    // - Items with NO cuisines assigned are HIDDEN when patient has preferences (strict filtering)
-                                                                    // - Items with cuisines are shown only if at least ONE patient cuisine matches at least ONE item cuisine
-                                                                    if (itemCuisines && itemCuisines.length > 0) {
-                                                                        // MULTI-SELECT MATCHING: Check if ANY patient cuisine matches ANY item cuisine
-                                                                        matchesCuisine = patientCuisines.some(patientCuisineId => 
-                                                                            itemCuisines.some(itemCuisineId => 
-                                                                                String(patientCuisineId) === String(itemCuisineId)
-                                                                            )
-                                                                        );
-                                                                        // DEBUG: Uncomment to see why items are hidden
-                                                                        // if (!matchesCuisine) {
-                                                                        //     console.log('HIDING item:', option.menu_option_name, 'Patient:', patientCuisines, 'Item:', itemCuisines);
-                                                                        // }
-                                                                    } else {
-                                                                        // Item has NO cuisines assigned - HIDE it when patient has preferences (strict filtering)
-                                                                        // This ensures patients with specific dietary needs (e.g., Vegan) only see items explicitly tagged
-                                                                        matchesCuisine = false;
-                                                                    }
+                                                        {
+                                                            let patientCuisines = [];
+                                                            if (bed.patient_dietary_preferences && bed.patient_dietary_preferences !== 'null' && bed.patient_dietary_preferences !== '[]' && bed.patient_dietary_preferences !== null) {
+                                                                try { patientCuisines = JSON.parse(bed.patient_dietary_preferences) || []; } catch(e) {}
+                                                            }
+                                                            patientCuisines = Array.isArray(patientCuisines) ? patientCuisines : [];
+
+                                                            let itemCuisinesParsed = [];
+                                                            if (option.cuisineValues) {
+                                                                if (typeof option.cuisineValues === 'string') {
+                                                                    try { itemCuisinesParsed = JSON.parse(option.cuisineValues); } catch(e) { itemCuisinesParsed = []; }
+                                                                } else {
+                                                                    itemCuisinesParsed = option.cuisineValues;
                                                                 }
-                                                            } catch (e) {
-                                                                console.error('Cuisine filtering error:', e, 'bed.patient_dietary_preferences:', bed.patient_dietary_preferences, 'option:', option);
-                                                                matchesCuisine = false; // On error, hide item to be safe
+                                                            }
+                                                            const itemCuisines = Array.isArray(itemCuisinesParsed) ? itemCuisinesParsed : [];
+
+                                                            const patientSet = patientCuisines.map(String).sort();
+                                                            const itemSet = itemCuisines.map(String).sort();
+
+                                                            if (patientSet.length === 0) {
+                                                                // No dietary preferences: show only standard items (empty cuisine)
+                                                                matchesCuisine = (itemSet.length === 0);
+                                                            } else {
+                                                                // Has preferences: EXACT set match required
+                                                                matchesCuisine = (patientSet.length === itemSet.length) && patientSet.every((id, i) => id === itemSet[i]);
                                                             }
                                                         }
                                                         
@@ -3185,26 +3180,30 @@
                                     const filteredOptions = optionsToShow.filter(option => {
                                         if (!bed) return true;
                                         
-                                        // CUISINE FILTERING
+                                        // CUISINE FILTERING (EXACT SET MATCH)
                                         let matchesCuisine = true;
-                                        if (bed.patient_dietary_preferences && bed.patient_dietary_preferences !== 'null' && bed.patient_dietary_preferences !== '[]' && bed.patient_dietary_preferences !== null) {
-                                            try {
-                                                const patientCuisinesParsed = JSON.parse(bed.patient_dietary_preferences);
-                                                const patientCuisines = Array.isArray(patientCuisinesParsed) ? patientCuisinesParsed : [];
-                                                if (patientCuisines && patientCuisines.length > 0) {
-                                                    let itemCuisinesParsed = [];
-                                                    if (option.cuisineValues) {
-                                                        itemCuisinesParsed = typeof option.cuisineValues === 'string' ? JSON.parse(option.cuisineValues) : option.cuisineValues;
-                                                    }
-                                                    const itemCuisines = Array.isArray(itemCuisinesParsed) ? itemCuisinesParsed : [];
-                                                    if (itemCuisines && itemCuisines.length > 0) {
-                                                        matchesCuisine = patientCuisines.some(pc => itemCuisines.some(ic => String(pc) === String(ic)));
-                                                    } else {
-                                                        matchesCuisine = false;
-                                                    }
-                                                }
-                                            } catch (e) {
-                                                matchesCuisine = false;
+                                        {
+                                            let patientCuisines = [];
+                                            if (bed.patient_dietary_preferences && bed.patient_dietary_preferences !== 'null' && bed.patient_dietary_preferences !== '[]' && bed.patient_dietary_preferences !== null) {
+                                                try { patientCuisines = JSON.parse(bed.patient_dietary_preferences) || []; } catch(e) {}
+                                            }
+                                            patientCuisines = Array.isArray(patientCuisines) ? patientCuisines : [];
+
+                                            let itemCuisinesParsed = [];
+                                            if (option.cuisineValues) {
+                                                itemCuisinesParsed = typeof option.cuisineValues === 'string' ? JSON.parse(option.cuisineValues) : option.cuisineValues;
+                                            }
+                                            const itemCuisines = Array.isArray(itemCuisinesParsed) ? itemCuisinesParsed : [];
+
+                                            const patientSet = patientCuisines.map(String).sort();
+                                            const itemSet = itemCuisines.map(String).sort();
+
+                                            if (patientSet.length === 0) {
+                                                // No dietary preferences: show only standard items (empty cuisine)
+                                                matchesCuisine = (itemSet.length === 0);
+                                            } else {
+                                                // Has preferences: EXACT set match required
+                                                matchesCuisine = (patientSet.length === itemSet.length) && patientSet.every((id, i) => id === itemSet[i]);
                                             }
                                         }
                                         
