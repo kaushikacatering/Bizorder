@@ -702,7 +702,7 @@ span.font-weight-bold {
 .bg-light,
 .bg-light *,
 div.bg-light,
-div.bg-light * {
+div.bg-light *:not(.badge) {
     color: #2c3e50 !important;
 }
 
@@ -984,8 +984,14 @@ span:not(.badge):not(.text-muted) {
                                 <div class="selected-options">
                                     <?php 
                                     if (isset($menu['menu_options']) && !empty($menu['menu_options'])) {
+                                        $shownOptionNames = [];
                                         foreach ($menu['menu_options'] as $menuOption) {
                                             if (in_array($menuOption['option_id'], $selectedOptions)) {
+                                                // Deduplicate by menu_option_name
+                                                if (in_array($menuOption['menu_option_name'], $shownOptionNames)) {
+                                                    continue;
+                                                }
+                                                $shownOptionNames[] = $menuOption['menu_option_name'];
                                                 ?>
                                                 <div class="selected-option mb-2 p-2 bg-light rounded">
                                                     <div class="option-info">
@@ -997,9 +1003,9 @@ span:not(.badge):not(.text-muted) {
                                                             if (is_array($cuisineIds) && !empty($cuisineIds) && isset($cuisineMap)) {
                                                                 foreach ($cuisineIds as $cid) {
                                                                     if (isset($cuisineShortCodeMap[$cid])) {
-                                                                        echo ' <span class="badge rounded-pill" style="background-color:#7c3aed;color:#fff;font-size:0.7rem;padding:2px 7px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
+                                                                        echo ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.7rem;padding:2px 7px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
                                                                     } elseif (isset($cuisineMap[$cid])) {
-                                                                        echo ' <span class="badge rounded-pill" style="background-color:#3b82f6;color:#fff;font-size:0.7rem;padding:2px 7px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
+                                                                        echo ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.7rem;padding:2px 7px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
                                                                     }
                                                                 }
                                                             }

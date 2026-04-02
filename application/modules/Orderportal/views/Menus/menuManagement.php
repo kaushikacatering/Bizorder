@@ -310,7 +310,8 @@ function addVariationRow() {
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +
             '<button class="btn btn-sm btn-success" onclick="saveVariationRow(this)" title="Save"><i class="ri-check-line"></i></button> ' +
-            '<button class="btn btn-sm btn-outline-danger" onclick="cancelVariationRow(this)" title="Cancel"><i class="ri-close-line"></i></button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="cancelVariationRow(this)" title="Cancel"><i class="ri-close-line"></i></button> ' +
+            '<button class="btn btn-sm btn-outline-success" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line"></i></button>' +
         '</td>';
 
     tr.querySelector('.v-cuisine-cell').appendChild(buildCbDropdown(ALL_CUISINES, [], 'cuisine-widget'));
@@ -339,7 +340,8 @@ function editVariation(btn) {
         '<td class="v-allergens-cell"></td>' +
         '<td class="text-center variation-actions">' +
             '<button class="btn btn-sm btn-success" onclick="saveVariationRow(this)" title="Save"><i class="ri-check-line"></i></button> ' +
-            '<button class="btn btn-sm btn-outline-secondary" onclick="cancelEditVariation(this)" title="Cancel"><i class="ri-close-line"></i></button>' +
+            '<button class="btn btn-sm btn-outline-secondary" onclick="cancelEditVariation(this)" title="Cancel"><i class="ri-close-line"></i></button> ' +
+            '<button class="btn btn-sm btn-outline-success" onclick="addVariationRow()" title="Add New Variation"><i class="ri-add-line"></i></button>' +
         '</td>';
 
     row.querySelector('.v-cuisine-cell').appendChild(buildCbDropdown(ALL_CUISINES, cuisineIds, 'cuisine-widget'));

@@ -602,6 +602,20 @@ input:checked + .switch-slider:before {
                     // Filter and extract menu_option_name
                     // echo "<pre>"; print_r($orderMenuOptions); exit;
                 
+$filtered_options = array_filter($orderMenuOptions, function ($item) use ($target_bed_id, $target_menu_id) {
+    return $item['bed_id'] == $target_bed_id && $item['menu_id'] == $target_menu_id;
+});
+
+// Deduplicate by menu_option_name
+$seen_names = [];
+$unique_options = [];
+foreach ($filtered_options as $item) {
+    if (!in_array($item['menu_option_name'], $seen_names)) {
+        $seen_names[] = $item['menu_option_name'];
+        $unique_options[] = $item;
+    }
+}
+
 $option_html = array_map(function ($item) {
     $color = !empty($item['menu_color']) ? htmlspecialchars($item['menu_color']) : '';
     $name  = htmlspecialchars($item['menu_option_name']);
@@ -613,9 +627,7 @@ $option_html = array_map(function ($item) {
             <span>' . $name . '</span>
         </span>
     ';
-}, array_filter($orderMenuOptions, function ($item) use ($target_bed_id, $target_menu_id) {
-    return $item['bed_id'] == $target_bed_id && $item['menu_id'] == $target_menu_id;
-}));
+}, $unique_options);
 
 
 
