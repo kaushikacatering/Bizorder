@@ -146,7 +146,7 @@ document.getElementById('menuItemSelect').addEventListener('change', function() 
             document.getElementById('menuOptionName').value = '';
             document.getElementById('menuOptionDesc').value = '';
             var tbody = document.getElementById('variationsBody');
-            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-black py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
         }
     } else {
         document.getElementById('variationsCard').style.display = 'none';
@@ -182,7 +182,7 @@ function loadVariations(menuDetailId, optionName) {
             document.getElementById('menuOptionDesc').value = first.description || '';
             document.getElementById('variationsHeading').textContent = 'Variations for: ' + (first.menu_option_name || '');
         } else {
-            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+            tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-black py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
         }
     })
     .catch(() => {
@@ -363,7 +363,7 @@ function cancelVariationRow(btn) {
     const tbody = row.closest('tbody');
     row.remove();
     if (!tbody.querySelector('.variation-row')) {
-        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+        tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-black py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
     }
 }
 
@@ -516,7 +516,7 @@ function deleteVariation(id, btn) {
         if (data.success) {
             row.remove();
             if (!tbody.querySelector('.variation-row')) {
-                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
+                tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-black py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
             }
             showToast('Variation deleted.', 'success');
         } else {
