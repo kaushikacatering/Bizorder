@@ -387,7 +387,7 @@ function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) 
    // FIXED: Fetch both menu options AND standalone comments (notes without menu items)
    // First, get all menu options with their comments, allergen information, and item-specific comments
    $this->tenantDb->distinct();
-   $this->tenantDb->select('opo.order_id, opo.menu_id, opo.option_id, opo.bed_id, mo.menu_option_name,mo.menu_color, mo.allergenValues, m2c.category_id,o2c.order_comment,o2c.order_data, mic.comment as item_comment');
+   $this->tenantDb->select('opo.order_id, opo.menu_id, opo.option_id, opo.bed_id, mo.menu_option_name,mo.menu_color, mo.allergenValues, mo.cuisineValues, m2c.category_id,o2c.order_comment,o2c.order_data, mic.comment as item_comment');
    $this->tenantDb->from('orders_to_patient_options as opo');
    $this->tenantDb->join('menu_options as mo', 'opo.option_id = mo.id', 'LEFT');
    $this->tenantDb->join('orders_to_comments as o2c', 'o2c.bed_id = opo.bed_id AND o2c.order_id = opo.order_id', 'LEFT');
@@ -450,6 +450,7 @@ function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) 
             mo.menu_option_name, 
             mo.menu_color, 
             mo.allergenValues,
+            mo.cuisineValues,
             m2c.category_id,
             sod.order_comment,
             "" as order_data,
@@ -486,6 +487,7 @@ function fetchOrderForChef($date = null, $orderId = null, $departmentId = null) 
             opo.bed_id, 
             mo.menu_option_name, 
             mo.allergenValues,
+            mo.cuisineValues,
             m2c.category_id,
             "" as order_comment,
             "" as order_data,

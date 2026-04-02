@@ -616,15 +616,30 @@ foreach ($filtered_options as $item) {
     }
 }
 
-$option_html = array_map(function ($item) {
+$option_html = array_map(function ($item) use ($cuisineMap, $cuisineShortCodeMap) {
     $color = !empty($item['menu_color']) ? htmlspecialchars($item['menu_color']) : '';
     $name  = htmlspecialchars($item['menu_option_name']);
+
+    // Build cuisine/diet badges
+    $badges = '';
+    if (!empty($item['cuisineValues'])) {
+        $cIds = json_decode($item['cuisineValues'], true);
+        if (is_array($cIds)) {
+            foreach ($cIds as $cid) {
+                if (isset($cuisineShortCodeMap[$cid])) {
+                    $badges .= ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
+                } elseif (isset($cuisineMap[$cid])) {
+                    $badges .= ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
+                }
+            }
+        }
+    }
 
     return '
         <span class="inline-flex items-center gap-1 mr-2">
             <span class="w-3 h-3 rounded-sm border border-gray-400"
                   style="background-color: ' . $color . ';"></span>
-            <span>' . $name . '</span>
+            <span>' . $name . '</span>' . $badges . '
         </span>
     ';
 }, $unique_options);
