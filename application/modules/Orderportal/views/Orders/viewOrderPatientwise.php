@@ -1,6 +1,12 @@
 <!-- ============================================================== -->
 <!-- Start right Content here -->
 <!-- ============================================================== -->
+<?php
+// Safe defaults for cuisine maps (may not be set in all controller paths)
+if (!isset($cuisineMap)) $cuisineMap = [];
+if (!isset($cuisineShortCodeMap)) $cuisineShortCodeMap = [];
+if (!isset($allergensData)) $allergensData = [];
+?>
 <style>
 /* Statistics Cards Styling - Matching Production Form Design */
 .stat-card {

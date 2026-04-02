@@ -5042,6 +5042,20 @@ class Order extends MY_Controller
         // This ensures historical orders show the ORIGINAL patient, not the current patient in the suite
         $result = $this->commonData($deptId, $orderId);
         
+        // Build cuisine lookup maps for diet badges
+        $conditionsCuisine = ['listtype' => 'cuisine', 'is_deleted' => '0'];
+        $cuisineData = $this->common_model->fetchRecordsDynamically('foodmenuconfig', '', $conditionsCuisine);
+        $cuisineMap = [];
+        $cuisineShortCodeMap = [];
+        if (!empty($cuisineData)) {
+            foreach ($cuisineData as $c) {
+                $cuisineMap[$c['id']] = $c['name'];
+                if (!empty($c['diet_short_code'])) {
+                    $cuisineShortCodeMap[$c['id']] = $c['diet_short_code'];
+                }
+            }
+        }
+        
         // 🔒 FILTER: Show only occupied suites (suites with patients)
         $bedLists = $result['bedLists'];
         $occupiedBedLists = [];
@@ -5107,6 +5121,8 @@ class Order extends MY_Controller
      }
        $data['buttonType'] = $buttonType;
        $data['orderCommentBedWise'] = $orderCommentBedWise;
+       $data['cuisineMap'] = $cuisineMap;
+       $data['cuisineShortCodeMap'] = $cuisineShortCodeMap;
      
         
         
@@ -5154,6 +5170,20 @@ class Order extends MY_Controller
         // ✅ PATIENT ID FIX: Pass orderId to commonData so it uses patient_id from orders_to_patient_options
         // This ensures historical orders show the ORIGINAL patient, not the current patient in the suite
         $result = $this->commonData($deptId, $orderId);
+        
+        // Build cuisine lookup maps for diet badges
+        $conditionsCuisine = ['listtype' => 'cuisine', 'is_deleted' => '0'];
+        $cuisineData = $this->common_model->fetchRecordsDynamically('foodmenuconfig', '', $conditionsCuisine);
+        $cuisineMap = [];
+        $cuisineShortCodeMap = [];
+        if (!empty($cuisineData)) {
+            foreach ($cuisineData as $c) {
+                $cuisineMap[$c['id']] = $c['name'];
+                if (!empty($c['diet_short_code'])) {
+                    $cuisineShortCodeMap[$c['id']] = $c['diet_short_code'];
+                }
+            }
+        }
         
         // Fetch cancelled order items to show "Cancelled" status in view
         $cancelledBedCategories = [];
@@ -5268,6 +5298,8 @@ class Order extends MY_Controller
             'orderCommentBedWise' => $orderCommentBedWise,
             'orderMenuOptions' => $orderMenuOptions, // Delivery page needs this for option names
             'buttonType' => $order['buttonType'],
+            'cuisineMap' => $cuisineMap,
+            'cuisineShortCodeMap' => $cuisineShortCodeMap,
             'isHistorical' => true, // Flag to indicate this is a historical view
             'isChefView' => $isChefView, // Flag to indicate if this is chef view
             'bednNotes' => [], // Empty array for bed notes

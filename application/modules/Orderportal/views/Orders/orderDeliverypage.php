@@ -1,6 +1,11 @@
 <!-- ============================================================== -->
 <!-- Start right Content here -->
 <!-- ============================================================== -->
+<?php
+// Safe defaults for cuisine maps (may not be set in all controller paths)
+if (!isset($cuisineMap)) $cuisineMap = [];
+if (!isset($cuisineShortCodeMap)) $cuisineShortCodeMap = [];
+?>
 <style>
 input[type=checkbox], input[type=radio] {
     margin: 9px 10px 9px 0;
