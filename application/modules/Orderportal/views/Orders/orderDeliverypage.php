@@ -611,32 +611,46 @@ $filtered_options = array_filter($orderMenuOptions, function ($item) use ($targe
     return $item['bed_id'] == $target_bed_id && $item['menu_id'] == $target_menu_id;
 });
 
-// Deduplicate by menu_option_name
+// Deduplicate by menu_option_name, merging cuisineValues from all variations
 $seen_names = [];
 $unique_options = [];
 foreach ($filtered_options as $item) {
     if (!in_array($item['menu_option_name'], $seen_names)) {
         $seen_names[] = $item['menu_option_name'];
-        $unique_options[] = $item;
+        $item['_mergedCuisineIds'] = [];
+        if (!empty($item['cuisineValues'])) {
+            $parsed = json_decode($item['cuisineValues'], true);
+            if (is_array($parsed)) $item['_mergedCuisineIds'] = $parsed;
+        }
+        $unique_options[$item['menu_option_name']] = $item;
+    } else {
+        // Merge cuisine IDs from this duplicate variation
+        if (!empty($item['cuisineValues'])) {
+            $parsed = json_decode($item['cuisineValues'], true);
+            if (is_array($parsed)) {
+                foreach ($parsed as $cid) {
+                    if (!in_array($cid, $unique_options[$item['menu_option_name']]['_mergedCuisineIds'])) {
+                        $unique_options[$item['menu_option_name']]['_mergedCuisineIds'][] = $cid;
+                    }
+                }
+            }
+        }
     }
 }
+$unique_options = array_values($unique_options);
 
 $option_html = array_map(function ($item) use ($cuisineMap, $cuisineShortCodeMap) {
     $color = !empty($item['menu_color']) ? htmlspecialchars($item['menu_color']) : '';
     $name  = htmlspecialchars($item['menu_option_name']);
 
-    // Build cuisine/diet badges
+    // Build cuisine/diet badges from merged cuisine IDs across all variations
     $badges = '';
-    if (!empty($item['cuisineValues'])) {
-        $cIds = json_decode($item['cuisineValues'], true);
-        if (is_array($cIds)) {
-            foreach ($cIds as $cid) {
-                if (isset($cuisineShortCodeMap[$cid])) {
-                    $badges .= ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
-                } elseif (isset($cuisineMap[$cid])) {
-                    $badges .= ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
-                }
-            }
+    $cIds = !empty($item['_mergedCuisineIds']) ? $item['_mergedCuisineIds'] : [];
+    foreach ($cIds as $cid) {
+        if (isset($cuisineShortCodeMap[$cid])) {
+            $badges .= ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
+        } elseif (isset($cuisineMap[$cid])) {
+            $badges .= ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
         }
     }
 

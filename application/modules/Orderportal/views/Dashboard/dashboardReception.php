@@ -785,6 +785,7 @@
                 <div class="bg-gray-50 rounded-lg p-4 mb-6">
                     <p class="text-gray-800 text-base leading-relaxed" id="modalDescription"></p>
                     <p id="modalAllergens" class="mt-2 text-sm text-red-600 font-medium"></p>
+                    <p id="modalDietrycodes" class="mt-2 text-sm text-green-600 font-medium"></p>
                 </div>
                 <div class="flex justify-end">
                     <button type="button" id="close-description" onclick="closeDescriptionModal()" class="py-2 px-6 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 font-medium">Close</button>
@@ -2632,14 +2633,29 @@
                                                         return matchesCuisine && matchesAllergen;
                                                     })
                                                     .reduce((acc, option) => {
-                                                        // Deduplicate by menu_option_name: keep first, collect all option_ids
+                                                        // Deduplicate by menu_option_name: keep first, collect all option_ids and merge cuisine IDs
                                                         const name = option.menu_option_name;
                                                         const existing = acc.find(o => o.menu_option_name === name);
                                                         if (existing) {
                                                             if (!existing._allOptionIds) existing._allOptionIds = [String(existing.option_id)];
                                                             existing._allOptionIds.push(String(option.option_id));
+                                                            // Merge cuisineValues from all variations
+                                                            try {
+                                                                const extraCuisine = typeof option.cuisineValues === 'string' ? JSON.parse(option.cuisineValues) : (option.cuisineValues || []);
+                                                                if (Array.isArray(extraCuisine)) {
+                                                                    extraCuisine.forEach(id => {
+                                                                        if (!existing._mergedCuisineIds.includes(String(id))) existing._mergedCuisineIds.push(String(id));
+                                                                    });
+                                                                }
+                                                            } catch(e) {}
                                                         } else {
                                                             option._allOptionIds = [String(option.option_id)];
+                                                            // Initialize merged cuisine IDs
+                                                            option._mergedCuisineIds = [];
+                                                            try {
+                                                                const parsed = typeof option.cuisineValues === 'string' ? JSON.parse(option.cuisineValues) : (option.cuisineValues || []);
+                                                                if (Array.isArray(parsed)) option._mergedCuisineIds = parsed.map(String);
+                                                            } catch(e) {}
                                                             acc.push(option);
                                                         }
                                                         return acc;
@@ -2682,10 +2698,12 @@
             class="ml-2 text-gray-400 hover:text-blue-600 transition-colors info-icon-btn relative z-10 p-2 rounded-full hover:bg-gray-100"
             data-description="${htmlspecialchars(option.menu_option_description)}"
             data-allergens="${htmlspecialchars(option.allergenValues)}"
+            data-dietryCode="${htmlspecialchars(JSON.stringify(option._mergedCuisineIds || []))}"
             title="${htmlspecialchars(option.menu_option_description)}"
             onclick="event.stopPropagation(); showMenuDescriptionModal(
                 this.getAttribute('data-description'),
-                JSON.parse(this.getAttribute('data-allergens') || '[]')
+                JSON.parse(this.getAttribute('data-allergens') || '[]'),
+                JSON.parse(this.getAttribute('data-dietryCode') || '[]')
             ); return false;">
         <i class="fas fa-info-circle text-lg"></i>
     </button>
@@ -2947,9 +2965,10 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
                 }
                 
                 // Show menu description modal - make it global
-                window.showMenuDescriptionModal = function(description, allergenValues = []) {
+                window.showMenuDescriptionModal = function(description, allergenValues = [], dietryCode = []) {
     console.log('Description:', description);
-    console.log('Allergen IDs:', allergenValues); // This will now be an array: ["26", "37"]
+    console.log('Allergen IDs:', allergenValues);
+    console.log('dietryCode IDs:', dietryCode); // This will now be an array: ["26", "37"]
 
     // Only send AJAX if there are allergen IDs
     if (allergenValues.length > 0) {
@@ -2985,6 +3004,37 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
         });
     } else {
         document.getElementById('modalAllergens').textContent = 'No allergens';
+    }
+
+    // fetch Dietary code Like Vegan, Halal etc...
+    if (dietryCode.length > 0) {
+        const formData = new URLSearchParams();
+        formData.append('dc_ids', JSON.stringify(dietryCode));
+
+        fetch('<?php echo base_url("Orderportal/Home/fetchDietrycode"); ?>', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const dcText = data.dietryCodes.length > 0
+                    ? 'Dietry Codes : ' + data.dietryCodes.join(', ')
+                    : '';
+                document.getElementById('modalDietrycodes').textContent = dcText;
+            } else {
+                document.getElementById('modalDietrycodes').textContent = '';
+            }
+        })
+        .catch(error => {
+            document.getElementById('modalDietrycodes').textContent = '';
+        });
+    } else {
+        document.getElementById('modalDietrycodes').textContent = '';
     }
 
     // Show modal with description

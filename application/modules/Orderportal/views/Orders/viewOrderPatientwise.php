@@ -990,31 +990,43 @@ span:not(.badge):not(.text-muted) {
                                 <div class="selected-options">
                                     <?php 
                                     if (isset($menu['menu_options']) && !empty($menu['menu_options'])) {
-                                        $shownOptionNames = [];
+                                        // Group selected options by name, merging cuisine IDs
+                                        $groupedOptions = [];
                                         foreach ($menu['menu_options'] as $menuOption) {
                                             if (in_array($menuOption['option_id'], $selectedOptions)) {
-                                                // Deduplicate by menu_option_name
-                                                if (in_array($menuOption['menu_option_name'], $shownOptionNames)) {
-                                                    continue;
+                                                $name = $menuOption['menu_option_name'];
+                                                if (!isset($groupedOptions[$name])) {
+                                                    $groupedOptions[$name] = $menuOption;
+                                                    $groupedOptions[$name]['_mergedCuisineIds'] = [];
                                                 }
-                                                $shownOptionNames[] = $menuOption['menu_option_name'];
+                                                if (!empty($menuOption['cuisineValues'])) {
+                                                    $parsed = json_decode($menuOption['cuisineValues'], true);
+                                                    if (is_array($parsed)) {
+                                                        foreach ($parsed as $cid) {
+                                                            if (!in_array($cid, $groupedOptions[$name]['_mergedCuisineIds'])) {
+                                                                $groupedOptions[$name]['_mergedCuisineIds'][] = $cid;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        foreach ($groupedOptions as $menuOption) {
                                                 ?>
                                                 <div class="selected-option mb-2 p-2 bg-light rounded">
                                                     <div class="option-info">
                                                         <span class="option-name fw-bold text-dark"><?php echo htmlspecialchars($menuOption['menu_option_name']); ?></span>
                                                         <?php
-                                                        // Display cuisine/diet type badges for variation clarity
-                                                        if (!empty($menuOption['cuisineValues'])) {
-                                                            $cuisineIds = json_decode($menuOption['cuisineValues'], true);
-                                                            if (is_array($cuisineIds) && !empty($cuisineIds) && isset($cuisineMap)) {
-                                                                foreach ($cuisineIds as $cid) {
+                                                        // Display cuisine/diet type badges from ALL matching variations
+                                                        $mergedCuisineIds = $menuOption['_mergedCuisineIds'] ?? [];
+                                                        if (!empty($mergedCuisineIds) && !empty($cuisineMap)) {
+                                                                foreach ($mergedCuisineIds as $cid) {
                                                                     if (isset($cuisineShortCodeMap[$cid])) {
                                                                         echo ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.7rem;padding:2px 7px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
                                                                     } elseif (isset($cuisineMap[$cid])) {
                                                                         echo ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.7rem;padding:2px 7px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
                                                                     }
                                                                 }
-                                                            }
                                                         }
                                                         ?>
                                                         <?php if (!empty($menuOption['menu_option_calorie']) && $menuOption['menu_option_calorie'] !== 'N/A') { ?>
@@ -1064,7 +1076,6 @@ span:not(.badge):not(.text-muted) {
                                                     </div>
                                                 </div>
                                                 <?php
-                                            }
                                         }
                                     }
                                     ?>
