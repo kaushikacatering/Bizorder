@@ -12,6 +12,12 @@
                 margin: 0.5cm;
             }
             
+            /* Preserve colors for printing (badges, etc.) */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
             body { 
                 font-size: 12px;
                 margin: 0;
@@ -405,21 +411,23 @@
                                                         <?php echo htmlspecialchars($item['menu_option_name']); ?>
                                                     </span>
                                                     <?php
-                                                    // Display cuisine type diet short codes
+                                                    // Display cuisine type badges for variation clarity
                                                     $rawCuisine = $item['cuisineValues'] ?? '[]';
                                                     $cuisineIds = is_string($rawCuisine) ? json_decode($rawCuisine, true) : (is_array($rawCuisine) ? $rawCuisine : []);
-                                                    if (!empty($cuisineIds) && !empty($cuisineShortCodeMap)):
+                                                    if (!empty($cuisineIds)):
                                                         foreach ($cuisineIds as $cid):
-                                                            if (isset($cuisineShortCodeMap[$cid])):
+                                                            $shortCode = $cuisineShortCodeMap[$cid] ?? '';
+                                                            $fullName = $cuisineMap[$cid] ?? '';
+                                                            if ($shortCode):
                                                     ?>
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800" title="<?php echo htmlspecialchars($cuisineMap[$cid] ?? ''); ?>">
-                                                        <?php echo htmlspecialchars($cuisineShortCodeMap[$cid]); ?>
+                                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-bold bg-purple-100 text-purple-800 border border-purple-300" title="<?php echo htmlspecialchars($fullName); ?>">
+                                                        <?php echo htmlspecialchars($shortCode); ?>
                                                     </span>
                                                     <?php
-                                                            elseif (isset($cuisineMap[$cid])):
+                                                            elseif ($fullName):
                                                     ?>
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                        <?php echo htmlspecialchars($cuisineMap[$cid]); ?>
+                                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-300">
+                                                        <?php echo htmlspecialchars($fullName); ?>
                                                     </span>
                                                     <?php
                                                             endif;

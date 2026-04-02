@@ -2719,12 +2719,26 @@ class Order extends MY_Controller
     // Pass deptId to filter by department if viewing a specific department
     $metrics = $this->getProductionFormMetrics($viewDate, $deptId);
     
+    // Build cuisine lookup maps from cuisineData
+    $cuisineMap = [];
+    $cuisineShortCodeMap = [];
+    if (!empty($cuisineData)) {
+        foreach ($cuisineData as $c) {
+            $cuisineMap[$c['id']] = $c['name'];
+            if (!empty($c['diet_short_code'])) {
+                $cuisineShortCodeMap[$c['id']] = $c['diet_short_code'];
+            }
+        }
+    }
+
     $data = [
         'menuLists' => $result['menuLists'],
         'bedLists' => $occupiedBedLists, // 🔒 Only occupied suites
         'categoryListData' => $result['categoryListData'],
         'allergensData' => $allergensData,
         'cuisineData' => $cuisineData,
+        'cuisineMap' => $cuisineMap,
+        'cuisineShortCodeMap' => $cuisineShortCodeMap,
         'savedMenus' => $savedMenus,
         'selectedDepartments' => $selectedDepartments,
         'deptId' => $deptId,

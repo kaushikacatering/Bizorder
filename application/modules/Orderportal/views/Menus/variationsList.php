@@ -44,8 +44,8 @@ function variationIdsToNames($jsonIds, $list) {
                                     </div>
 
                                     <div class="ms-auto">
-                                        <a class="btn btn-success" href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?mode=add'); ?>">
-                                            <i class="ri-add-line align-bottom me-1"></i> Add Menu Item
+                                        <a class="btn text-white" style="background-color:#4285f4;" href="<?php echo site_url('Orderportal/Configfoodmenu/menu_management?mode=add'); ?>">
+                                            <i class="ri-add-line align-bottom me-1"></i> Add Menu Option
                                         </a>
                                     </div>
                                 </div>

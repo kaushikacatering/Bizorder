@@ -30,7 +30,7 @@
       <!-- Page Header -->
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
-          <h5 class="card-title mb-0 text-black"><?php echo htmlspecialchars($title); ?></h5>
+          <h5 class="card-title mb-0 text-black">Add Menu Option and Variations</h5>
           <p class="text-black small mb-0">Manage menu items and their dietary variations</p>
         </div>
         <div class="d-flex gap-2 align-items-center">
@@ -53,6 +53,7 @@
               <label class="form-label fw-semibold">Select Menu Item</label>
               <select id="menuItemSelect" class="form-select px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-gray-50 text-sm">
                 <option value="">-- Select Menu Item --</option>
+                <?php usort($menuItems, function($a, $b) { return strcasecmp($a['name'], $b['name']); }); ?>
                 <?php foreach ($menuItems as $i => $mi): ?>
                   <option value="<?php echo (int)$mi['id']; ?>" <?php echo ((int)$mi['id'] === (int)($preselect_menu_id ?? 0)) ? 'selected' : ''; ?>><?php echo htmlspecialchars($mi['name']); ?></option>
                 <?php endforeach; ?>
@@ -118,11 +119,19 @@ const PRESELECT_MENU_ID = <?php echo (int)($preselect_menu_id ?? 0); ?>;
 let selectedMenuId = null;
 
 // ─── Menu Item dropdown change ──────────────────────────────────
+document.getElementById('menuOptionName').addEventListener('input', function() {
+    if (selectedMenuId) {
+        const val = this.value.trim();
+        const sel = document.getElementById('menuItemSelect');
+        document.getElementById('variationsHeading').textContent = 'Variations for: ' + (val || sel.options[sel.selectedIndex].text);
+    }
+});
+
 document.getElementById('menuItemSelect').addEventListener('change', function() {
     selectedMenuId = this.value ? parseInt(this.value) : null;
     if (selectedMenuId) {
         const menuName = this.options[this.selectedIndex].text;
-        document.getElementById('variationsHeading').textContent = 'Variations for: ' + menuName;
+        document.getElementById('variationsHeading').textContent = 'Variations for: ' + (document.getElementById('menuOptionName').value.trim() || menuName);
         document.getElementById('variationsCard').style.display = '';
         document.getElementById('menuOptionNameWrap').style.display = '';
         document.getElementById('menuOptionDescWrap').style.display = '';
@@ -171,6 +180,7 @@ function loadVariations(menuDetailId, optionName) {
             const first = data.variations[0];
             document.getElementById('menuOptionName').value = first.menu_option_name || '';
             document.getElementById('menuOptionDesc').value = first.description || '';
+            document.getElementById('variationsHeading').textContent = 'Variations for: ' + (first.menu_option_name || '');
         } else {
             tbody.innerHTML = '<tr class="no-variations-row"><td colspan="5" class="text-center text-muted py-3">No variations yet. Click <b>Add Variation</b> above to add one.</td></tr>';
         }

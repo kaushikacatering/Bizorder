@@ -203,6 +203,14 @@
         border-left: 3px solid #17a2b8 !important;
     }
     
+    /* Cuisine/diet badge styling for print */
+    .badge.rounded-pill {
+        font-size: 7px !important;
+        padding: 1px 5px !important;
+        display: inline !important;
+        border-radius: 10px !important;
+    }
+    
     /* Statistics Cards Print Styling */
     .order-statistics-summary {
         margin-bottom: 15px !important;
@@ -982,6 +990,21 @@ span:not(.badge):not(.text-muted) {
                                                 <div class="selected-option mb-2 p-2 bg-light rounded">
                                                     <div class="option-info">
                                                         <span class="option-name fw-bold text-dark"><?php echo htmlspecialchars($menuOption['menu_option_name']); ?></span>
+                                                        <?php
+                                                        // Display cuisine/diet type badges for variation clarity
+                                                        if (!empty($menuOption['cuisineValues'])) {
+                                                            $cuisineIds = json_decode($menuOption['cuisineValues'], true);
+                                                            if (is_array($cuisineIds) && !empty($cuisineIds) && isset($cuisineMap)) {
+                                                                foreach ($cuisineIds as $cid) {
+                                                                    if (isset($cuisineShortCodeMap[$cid])) {
+                                                                        echo ' <span class="badge rounded-pill" style="background-color:#7c3aed;color:#fff;font-size:0.7rem;padding:2px 7px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
+                                                                    } elseif (isset($cuisineMap[$cid])) {
+                                                                        echo ' <span class="badge rounded-pill" style="background-color:#3b82f6;color:#fff;font-size:0.7rem;padding:2px 7px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        ?>
                                                         <?php if (!empty($menuOption['menu_option_calorie']) && $menuOption['menu_option_calorie'] !== 'N/A') { ?>
                                                             <small class="d-block text-muted"><?php echo htmlspecialchars($menuOption['menu_option_calorie']); ?> cal</small>
                                                         <?php } ?>

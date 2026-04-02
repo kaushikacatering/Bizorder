@@ -657,7 +657,7 @@ class Configfoodmenu extends MY_Controller
      * Listing page for all variations (similar to menu_options listing)
      */
     public function menu_management_list() {
-        $data['title'] = 'Menu Management - Variations';
+        $data['title'] = 'Menu Options and Variations';
         $data['variations'] = $this->menu_model->get_all_variations_list();
 
         $cuisineConditions = ['listtype' => 'cuisine', 'is_deleted' => 0];

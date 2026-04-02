@@ -17,7 +17,7 @@
                                         <div>
                                             <a class="btn btn-success add-btn" href="<?php echo base_url('Orderportal/Configfoodmenu/manage_menu') ?>"><i class="ri-add-line align-bottom me-1"></i> Add Menu</a>
                                             <?php /* <a class="btn btn-secondary add-btn" href="<?php echo base_url('Orderportal/Configfoodmenu/menu_options') ?>"><i class="ri-add-line align-bottom me-1"></i>Menu Options</a> */ ?>
-                                            <a class="btn btn-info add-btn" href="<?php echo base_url('Orderportal/Configfoodmenu/menu_management_list') ?>"><i class="ri-layout-grid-line align-bottom me-1"></i> Menu Management</a>
+                                            <a class="btn btn-info add-btn" href="<?php echo base_url('Orderportal/Configfoodmenu/menu_management_list') ?>"><i class="ri-layout-grid-line align-bottom me-1"></i> Menu Options</a>
                                             <button type="button" class="btn btn-warning add-btn" id="viewInactiveItemsBtn"><i class="ri-eye-off-line align-bottom me-1"></i> View Inactive Items</button>
                                             <a class="btn btn-dark add-btn" href="<?php echo base_url('Orderportal/Configfoodmenu/downloadMenu') ?>"><i class="ri-save-line align-bottom me-1"></i> Download</a>
                                         </div>
