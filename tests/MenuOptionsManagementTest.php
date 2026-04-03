@@ -151,23 +151,68 @@ class MenuOptionsManagementTest extends CITestCase
 
     /**
      * Mirrors the dashboard JS: menuHasMatchingVariation()
+     * EXACT SET MATCH logic:
+     * - Patient has preferences: variation must have EXACTLY the same set of cuisines
+     * - Patient has NO preferences: only match standard variations (empty cuisine)
+     * - Always check allergen exclusion
      */
-    protected function menuHasMatchingVariation(array $variations, array $patientCuisineIds): bool
+    protected function menuHasMatchingVariation(array $variations, array $patientCuisineIds, array $patientAllergyIds = []): bool
     {
-        if (empty($variations)) return true;
-        if (empty($patientCuisineIds)) return true;
+        if (empty($variations)) return true; // No variations = show everything (backward compat)
 
         $patientIds = array_map('strval', $patientCuisineIds);
+        sort($patientIds);
+        $allergyIds = array_map('strval', $patientAllergyIds);
 
         foreach ($variations as $v) {
             $vCuisineIds = json_decode($v['cuisine_type_ids'] ?? '[]', true) ?: [];
-            foreach ($vCuisineIds as $cid) {
-                if (in_array((string)$cid, $patientIds)) {
-                    return true;
+            $vCuisineStrs = array_map('strval', $vCuisineIds);
+            sort($vCuisineStrs);
+
+            // EXACT SET MATCH for cuisine:
+            if (empty($patientIds)) {
+                // No dietary preferences: only match standard variations (empty cuisine)
+                if (!empty($vCuisineStrs)) continue;
+            } else {
+                // Has dietary preferences: variation must have EXACTLY the same set of cuisines
+                if (count($vCuisineStrs) !== count($patientIds)) continue;
+                if ($patientIds !== $vCuisineStrs) continue;
+            }
+
+            // Check allergen exclusion
+            if (!empty($allergyIds)) {
+                $vAllergenIds = json_decode($v['allergenValues'] ?? '[]', true) ?: [];
+                if (!empty($vAllergenIds)) {
+                    $conflict = !empty(array_intersect(array_map('strval', $vAllergenIds), $allergyIds));
+                    if ($conflict) continue;
                 }
             }
+
+            return true; // Found a matching variation
         }
         return false;
+    }
+
+    /**
+     * Mirrors the option-level cuisine filtering on the dashboard.
+     * For each individual menu option, checks if it should be shown to a patient.
+     */
+    protected function optionMatchesCuisine(array $option, array $patientCuisineIds): bool
+    {
+        $patientSet = array_map('strval', $patientCuisineIds);
+        sort($patientSet);
+
+        $itemCuisines = json_decode($option['cuisine_type_ids'] ?? $option['cuisineValues'] ?? '[]', true) ?: [];
+        $itemSet = array_map('strval', $itemCuisines);
+        sort($itemSet);
+
+        if (empty($patientSet)) {
+            // No dietary preferences: show only standard items (empty cuisine)
+            return empty($itemSet);
+        } else {
+            // Has preferences: EXACT set match required
+            return ($patientSet === $itemSet);
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -402,45 +447,49 @@ class MenuOptionsManagementTest extends CITestCase
     }
 
     /**
-     * #12: Patient with no dietary preferences should see all menus.
+     * #12: Patient with no dietary preferences should see menus with standard (empty cuisine) variations.
      */
-    public function testDashboardFilter_NoPreferencesMeansShowAll()
+    public function testDashboardFilter_NoPreferencesMeansShowStandard()
     {
         $this->seedVariationData();
 
+        // Menu with only a GF variation — no standard variation
         $this->insertMenuOption(1, 'GF only', [self::CUISINE_GLUTEN_FREE]);
         $options = $this->getOptionsByMenu(1);
 
+        // Patient with no prefs should NOT see this menu (no standard variation exists)
         $result = $this->menuHasMatchingVariation($options, []);
-        $this->assertTrue($result);
+        $this->assertFalse($result, 'No-pref patient should not see menus with only dietary-specific variations');
     }
 
     /**
-     * #13: Multi-cuisine option matches if ANY patient preference overlaps.
+     * #13: Variation [GF,DF] does NOT match patient with just [DF] — exact set match required.
      */
-    public function testDashboardFilter_PartialOverlap()
+    public function testDashboardFilter_PartialOverlap_NoMatch()
     {
         $this->seedVariationData();
 
         $this->insertMenuOption(1, 'GF+DF', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
         $options = $this->getOptionsByMenu(1);
 
+        // Patient wants only DF, but variation has [GF,DF] — NOT an exact match
         $result = $this->menuHasMatchingVariation($options, [self::CUISINE_DAIRY_FREE]);
-        $this->assertTrue($result);
+        $this->assertFalse($result, 'Variation [GF,DF] should not match patient with only [DF]');
     }
 
     /**
-     * #14: Patient has multiple preferences, one matches.
+     * #14: Patient has [GF,SF] — variation with only [SF] does NOT match (exact set required).
      */
-    public function testDashboardFilter_PatientMultiplePrefs()
+    public function testDashboardFilter_PatientMultiplePrefs_NoPartialMatch()
     {
         $this->seedVariationData();
 
         $this->insertMenuOption(1, 'SF Toast', [self::CUISINE_SUGAR_FREE]);
         $options = $this->getOptionsByMenu(1);
 
+        // Patient wants [GF,SF], variation only has [SF] — NOT an exact match
         $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_SUGAR_FREE]);
-        $this->assertTrue($result);
+        $this->assertFalse($result, 'Variation [SF] should not match patient with [GF,SF] — exact set required');
     }
 
     /**
@@ -471,6 +520,212 @@ class MenuOptionsManagementTest extends CITestCase
 
         $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
         $this->assertFalse($result);
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // 2-RESTRICTION BUG TESTS (Client reported: patients with 2
+    // dietary restrictions see limited options or nothing)
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * BUG TEST #1: Patient with [GF,DF] sees menu that has exact [GF,DF] combo variation.
+     */
+    public function testTwoRestrictions_ExactComboExists_ShowsMenu()
+    {
+        $this->seedVariationData();
+
+        // Menu "Toast" has: standard, GF-only, DF-only, and a GF+DF combo
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'DF Toast', [self::CUISINE_DAIRY_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertTrue($result, 'Patient with [GF,DF] should see menu when exact [GF,DF] variation exists');
+    }
+
+    /**
+     * BUG TEST #2: Patient with [GF,DF] sees NOTHING when menu only has separate GF and DF variations.
+     * THIS IS THE REPORTED BUG — exact match means [GF] alone or [DF] alone won't match [GF,DF].
+     */
+    public function testTwoRestrictions_OnlySeparateVariations_NoMenu()
+    {
+        $this->seedVariationData();
+
+        // Menu "Toast" has GF and DF as separate variations, but NOT a [GF,DF] combo
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'DF Toast', [self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // With EXACT match, patient [GF,DF] won't match [GF] or [DF] separately
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertFalse($result, 'Patient with [GF,DF] should NOT match separate [GF] and [DF] variations (exact set match)');
+    }
+
+    /**
+     * BUG TEST #3: Patient [GF,DF] — option-level filtering hides all non-exact variations.
+     * Verifies the per-option filter mirrors the menu-level filter.
+     */
+    public function testTwoRestrictions_OptionLevelFiltering()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'DF Toast', [self::CUISINE_DAIRY_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+        $patientPrefs = [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE];
+
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, $patientPrefs));
+        $visibleNames = array_column($visible, 'menu_option_name');
+
+        $this->assertCount(1, $visible, 'Patient [GF,DF] should see exactly 1 option (the combo)');
+        $this->assertContains('GF+DF Toast', $visibleNames);
+        $this->assertNotContains('GF Toast', $visibleNames);
+        $this->assertNotContains('DF Toast', $visibleNames);
+        $this->assertNotContains('Standard Toast', $visibleNames);
+    }
+
+    /**
+     * BUG TEST #4: No-preference patient sees only standard (empty cuisine) options.
+     */
+    public function testNoPreference_SeesOnlyStandard()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Menu level: should show because standard variation exists
+        $result = $this->menuHasMatchingVariation($options, []);
+        $this->assertTrue($result, 'No-pref patient should see menu when standard variation exists');
+
+        // Option level: only standard shown
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, []));
+        $visibleNames = array_column($visible, 'menu_option_name');
+        $this->assertCount(1, $visible);
+        $this->assertContains('Standard Toast', $visibleNames);
+    }
+
+    /**
+     * BUG TEST #5: Single-restriction patient [GF] sees only GF options, not GF+DF combos.
+     */
+    public function testSingleRestriction_ExactMatch()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+        $patientPrefs = [self::CUISINE_GLUTEN_FREE];
+
+        // Menu level: should show because [GF] variation exists
+        $result = $this->menuHasMatchingVariation($options, $patientPrefs);
+        $this->assertTrue($result);
+
+        // Option level: only [GF] shown, not [GF,DF] or standard
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, $patientPrefs));
+        $visibleNames = array_column($visible, 'menu_option_name');
+        $this->assertCount(1, $visible);
+        $this->assertContains('GF Toast', $visibleNames);
+        $this->assertNotContains('GF+DF Toast', $visibleNames);
+    }
+
+    /**
+     * BUG TEST #6: Allergen exclusion works with exact cuisine match.
+     * Patient [GF,DF] with Sugar allergy — combo variation with Sugar allergen is hidden.
+     */
+    public function testTwoRestrictions_AllergenExclusion()
+    {
+        $this->seedVariationData();
+
+        // GF+DF variation that contains a sugar allergen
+        $this->insertMenuOption(1, 'GF+DF Sweet Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE],
+            'Sweet version', '200 Cal', [self::ALLERGEN_NUTS]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Patient has [GF,DF] and is allergic to nuts
+        $result = $this->menuHasMatchingVariation($options, 
+            [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE],
+            [self::ALLERGEN_NUTS]
+        );
+        $this->assertFalse($result, 'Variation should be excluded due to allergen conflict even with exact cuisine match');
+    }
+
+    /**
+     * BUG TEST #7: Patient [GF,DF] — menu has only standard and [GF] variations → sees nothing.
+     * This is the real-world scenario the client reported.
+     */
+    public function testTwoRestrictions_RealWorldBug_NoComboVariation()
+    {
+        $this->seedVariationData();
+
+        // Typical menu setup: standard + individual dietary variations, no combo
+        $this->insertMenuOption(1, 'Standard Eggs', []);
+        $this->insertMenuOption(1, 'GF Eggs', [self::CUISINE_GLUTEN_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Patient with [GF,DF] should NOT match [GF] or [] — this is the bug scenario
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertFalse($result, 'Patient with [GF,DF] correctly sees nothing when no [GF,DF] combo variation exists');
+
+        // At option level, also nothing visible
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, 
+            [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]));
+        $this->assertCount(0, $visible, 'No options should be visible for [GF,DF] patient when no combo exists');
+    }
+
+    /**
+     * BUG TEST #8: Cuisine ID order doesn't matter — [DF,GF] matches [GF,DF].
+     */
+    public function testTwoRestrictions_OrderIndependent()
+    {
+        $this->seedVariationData();
+
+        // Variation stored as [GF, DF]
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Patient stored as [DF, GF] (reversed order)
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_DAIRY_FREE, self::CUISINE_GLUTEN_FREE]);
+        $this->assertTrue($result, 'Cuisine order should not matter — [DF,GF] matches [GF,DF]');
+    }
+
+    /**
+     * BUG TEST #9: Three restrictions — exact match with triple combo.
+     */
+    public function testThreeRestrictions_ExactTripleMatch()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'GF+DF+SF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Patient with all 3 should only match the triple combo
+        $result = $this->menuHasMatchingVariation($options,
+            [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+        $this->assertTrue($result);
+
+        // Option level: only triple combo visible
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt,
+            [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]));
+        $this->assertCount(1, $visible);
+        $this->assertEquals('GF+DF+SF Toast', array_values($visible)[0]['menu_option_name']);
     }
 
     // ═════════════════════════════════════════════════════════════════

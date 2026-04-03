@@ -180,7 +180,17 @@ input[type=checkbox], input[type=radio] {
     <button type="button" id="allergiesDropdownBtn" 
         class="w-full flex justify-between items-center px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
         <span id="allergiesSelectedText" class="text-gray-700 text-sm">
-            <?= !empty($selected_allergies) ? count($selected_allergies) . " selected" : "Select Diet Restrictions" ?>
+            <?php
+            if (!empty($selected_allergies)) {
+                $allergyNames = [];
+                foreach ($allergies as $a) {
+                    if (in_array($a['id'], $selected_allergies)) $allergyNames[] = $a['name'];
+                }
+                echo htmlspecialchars(implode(', ', $allergyNames));
+            } else {
+                echo 'Select Diet Restrictions';
+            }
+            ?>
         </span>
         <i class="fa-solid fa-chevron-down text-gray-500 ml-2"></i>
     </button>
@@ -246,7 +256,17 @@ input[type=checkbox], input[type=radio] {
     <button type="button" id="dietaryPreferencesDropdownBtn" 
         class="w-full flex justify-between items-center px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
         <span id="dietaryPreferencesSelectedText" class="text-gray-700 text-sm">
-            <?= !empty($selected_cuisines) ? count($selected_cuisines) . " selected" : "Select Dietary Preferences" ?>
+            <?php
+            if (!empty($selected_cuisines) && !empty($cuisines)) {
+                $cuisineNames = [];
+                foreach ($cuisines as $c) {
+                    if (in_array($c['id'], $selected_cuisines)) $cuisineNames[] = $c['name'];
+                }
+                echo htmlspecialchars(implode(', ', $cuisineNames));
+            } else {
+                echo 'Select Dietary Preferences';
+            }
+            ?>
         </span>
         <i class="fa-solid fa-chevron-down text-gray-500 ml-2"></i>
     </button>
@@ -944,8 +964,8 @@ function previewPatientPhoto(input) {
         // Update selected text when user checks/unchecks
         checkboxes.forEach(cb => {
             cb.addEventListener("change", () => {
-                const checked = [...checkboxes].filter(c => c.checked).length;
-                selectedText.textContent = checked > 0 ? checked + " selected" : "Select Diet Restrictions";
+                const checkedNames = [...checkboxes].filter(c => c.checked).map(c => c.closest('label').querySelector('span').textContent.trim());
+                selectedText.textContent = checkedNames.length > 0 ? checkedNames.join(', ') : "Select Diet Restrictions";
             });
         });
 
@@ -1015,8 +1035,8 @@ function previewPatientPhoto(input) {
             // Update selected text when user checks/unchecks
             dietaryCheckboxes.forEach(cb => {
                 cb.addEventListener("change", () => {
-                    const checked = [...dietaryCheckboxes].filter(c => c.checked).length;
-                    dietarySelectedText.textContent = checked > 0 ? checked + " selected" : "Select Dietary Preferences";
+                    const checkedNames = [...dietaryCheckboxes].filter(c => c.checked).map(c => c.closest('label').querySelector('span').textContent.trim());
+                    dietarySelectedText.textContent = checkedNames.length > 0 ? checkedNames.join(', ') : "Select Dietary Preferences";
                 });
             });
 
