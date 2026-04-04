@@ -636,9 +636,10 @@ class MenuOptionsManagementTest extends CITestCase
         // Option level: only [GF] shown, not [GF,DF] or standard
         $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, $patientPrefs));
         $visibleNames = array_column($visible, 'menu_option_name');
-        $this->assertCount(1, $visible);
+        $this->assertCount(1, $visible, 'Patient [GF] should see only exact [GF] option');
         $this->assertContains('GF Toast', $visibleNames);
         $this->assertNotContains('GF+DF Toast', $visibleNames);
+        $this->assertNotContains('Standard Toast', $visibleNames);
     }
 
     /**
@@ -706,6 +707,7 @@ class MenuOptionsManagementTest extends CITestCase
 
     /**
      * BUG TEST #9: Three restrictions — exact match with triple combo.
+     * Patient [GF,DF,SF] sees [GF,DF,SF] but NOT [GF,DF] (different set).
      */
     public function testThreeRestrictions_ExactTripleMatch()
     {
@@ -726,6 +728,364 @@ class MenuOptionsManagementTest extends CITestCase
             [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]));
         $this->assertCount(1, $visible);
         $this->assertEquals('GF+DF+SF Toast', array_values($visible)[0]['menu_option_name']);
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // EXACT SET MATCH ROBUSTNESS TESTS
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * EXACT TEST #1: Patient [GF,DF] does NOT match variation [GF,DF,SF] (different set size).
+     * Exact match requires identical sets, not subsets/supersets.
+     */
+    public function testExact_PatientGFDF_DoesNotMatchVariationGFDFSF()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'GF+DF+SF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertFalse($result, 'Patient [GF,DF] should NOT match [GF,DF,SF] (different set)');
+
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]));
+        $this->assertCount(0, $visible);
+    }
+
+    /**
+     * EXACT TEST #2: Patient [GF,DF] does NOT match variation [GF] (subset, missing DF).
+     */
+    public function testExact_PatientGFDF_DoesNotMatchVariationGF()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertFalse($result, 'Patient [GF,DF] should NOT match [GF] only (missing DF)');
+    }
+
+    /**
+     * EXACT TEST #3: Patient [GF,DF] does NOT match variation [DF,SF] (missing GF).
+     */
+    public function testExact_PatientGFDF_DoesNotMatchVariationDFSF()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'DF+SF Toast', [self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertFalse($result, 'Patient [GF,DF] should NOT match [DF,SF] (missing GF)');
+    }
+
+    /**
+     * EXACT TEST #4: Patient [GF] sees ONLY [GF], not [GF,DF] or [GF,DF,SF].
+     * Single-restriction patient sees only exact match.
+     */
+    public function testExact_SinglePref_OnlyExactMatch()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->insertMenuOption(1, 'GF+DF+SF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+        $this->insertMenuOption(1, 'DF Toast', [self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+        $patientPrefs = [self::CUISINE_GLUTEN_FREE];
+
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, $patientPrefs));
+        $visibleNames = array_column($visible, 'menu_option_name');
+
+        $this->assertCount(1, $visible, 'Patient [GF] should see only 1 exact [GF] option');
+        $this->assertContains('GF Toast', $visibleNames);
+        $this->assertNotContains('GF+DF Toast', $visibleNames);
+        $this->assertNotContains('GF+DF+SF Toast', $visibleNames);
+        $this->assertNotContains('Standard Toast', $visibleNames);
+        $this->assertNotContains('DF Toast', $visibleNames);
+    }
+
+    /**
+     * EXACT TEST #5: Patient [GF,DF] sees ONLY exact [GF,DF] match.
+     * Comprehensive option-level test with mixed variations.
+     */
+    public function testExact_TwoPrefs_OnlyExactCombo()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'DF Toast', [self::CUISINE_DAIRY_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->insertMenuOption(1, 'GF+DF+SF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+        $this->insertMenuOption(1, 'DF+SF Toast', [self::CUISINE_DAIRY_FREE, self::CUISINE_SUGAR_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+        $patientPrefs = [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE];
+
+        // Menu level: should match (has exact combo)
+        $result = $this->menuHasMatchingVariation($options, $patientPrefs);
+        $this->assertTrue($result);
+
+        // Option level: only [GF,DF] shown — NOT [GF,DF,SF] or any other
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, $patientPrefs));
+        $visibleNames = array_column($visible, 'menu_option_name');
+
+        $this->assertCount(1, $visible, 'Patient [GF,DF] should see only exact [GF,DF] option');
+        $this->assertContains('GF+DF Toast', $visibleNames);
+        $this->assertNotContains('GF+DF+SF Toast', $visibleNames);
+        $this->assertNotContains('Standard Toast', $visibleNames);
+        $this->assertNotContains('GF Toast', $visibleNames);
+        $this->assertNotContains('DF Toast', $visibleNames);
+        $this->assertNotContains('DF+SF Toast', $visibleNames);
+    }
+
+    /**
+     * EXACT TEST #6: Allergen exclusion works with exact cuisine match.
+     * Patient [GF,DF] — safe variation matches, nut variation excluded.
+     */
+    public function testExact_AllergenExclusionWithExactMatch()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'GF+DF Toast Safe', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE], '', '', []);
+        $this->insertMenuOption(1, 'GF+DF Toast Nuts', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE], '', '', [self::ALLERGEN_NUTS]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Without allergen filter: matches
+        $resultNoAllergen = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $this->assertTrue($resultNoAllergen);
+
+        // With nut allergy: only safe one matches
+        $resultWithAllergen = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE], [self::ALLERGEN_NUTS]);
+        $this->assertTrue($resultWithAllergen, 'Safe [GF,DF] variation should still match even when another is excluded by allergen');
+    }
+
+    /**
+     * EXACT TEST #7: All exact-match variations excluded by allergen → menu hidden.
+     */
+    public function testExact_AllVariationsExcludedByAllergen()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'GF+DF Toast Nuts', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE], '', '', [self::ALLERGEN_NUTS]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE], [self::ALLERGEN_NUTS]);
+        $this->assertFalse($result, 'Menu should be hidden when all exact-match variations have allergen conflicts');
+    }
+
+    /**
+     * EXACT TEST #8: Empty cuisine variation does NOT match patient with preferences.
+     */
+    public function testExact_EmptyCuisineDoesNotMatchPatientWithPrefs()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+
+        $options = $this->getOptionsByMenu(1);
+
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_GLUTEN_FREE]);
+        $this->assertFalse($result, 'Standard (empty cuisine) should NOT match patient with [GF] preference');
+
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, [self::CUISINE_GLUTEN_FREE]));
+        $this->assertCount(0, $visible, 'Standard option should not be visible to patient with preferences');
+    }
+
+    /**
+     * EXACT TEST #9: Exact match with reversed ID order still works.
+     * Patient [DF,GF] matches variation [GF,DF] since both sort to same set.
+     */
+    public function testExact_OrderIndependentExactMatch()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+
+        // Patient stored as [DF, GF] (reversed) — should still match [GF,DF] after sorting
+        $result = $this->menuHasMatchingVariation($options, [self::CUISINE_DAIRY_FREE, self::CUISINE_GLUTEN_FREE]);
+        $this->assertTrue($result, 'Order of IDs should not matter — [DF,GF] matches [GF,DF]');
+    }
+
+    /**
+     * EXACT TEST #10: Production scenario — patient with [GF,DF], menu has exact [GF,DF] combo.
+     */
+    public function testExact_ProductionBug_PatientGFDF_ComboExists()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Lunch', []);
+        $this->insertMenuOption(1, 'GF+DF Lunch', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $options = $this->getOptionsByMenu(1);
+        $patientPrefs = [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE];
+
+        // Menu level: should show
+        $result = $this->menuHasMatchingVariation($options, $patientPrefs);
+        $this->assertTrue($result, 'Patient [GF,DF] should see menu with [GF,DF] combo variation');
+
+        // Option level: only the combo
+        $visible = array_filter($options, fn($opt) => $this->optionMatchesCuisine($opt, $patientPrefs));
+        $visibleNames = array_column($visible, 'menu_option_name');
+        $this->assertCount(1, $visible);
+        $this->assertContains('GF+DF Lunch', $visibleNames);
+        $this->assertNotContains('Standard Lunch', $visibleNames);
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // MENU PLANNER FILTER BYPASS TESTS
+    // (Dietary variation options should be visible even if added after
+    // menu planner was published and their option_id isn't in the plan)
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * Helper: Simulates the menu planner filter + cuisine filter pipeline.
+     * menuPlannerOptions = list of option_ids saved when menu was published.
+     * Returns options that would be visible to the patient.
+     */
+    protected function applyPlannerAndCuisineFilter(array $allOptions, array $menuPlannerOptionIds, array $patientCuisineIds): array
+    {
+        // Step 1: Menu planner filter (with dietary bypass)
+        if (!empty($menuPlannerOptionIds)) {
+            $afterPlanner = array_filter($allOptions, function($opt) use ($menuPlannerOptionIds) {
+                // Include if in plan OR has dietary cuisine values
+                $optId = $opt['option_id'] ?? $opt['id'] ?? null;
+                if (in_array($optId, $menuPlannerOptionIds)) return true;
+                $cv = json_decode($opt['cuisine_type_ids'] ?? $opt['cuisineValues'] ?? '[]', true) ?: [];
+                return !empty($cv);
+            });
+        } else {
+            $afterPlanner = $allOptions;
+        }
+
+        // Step 2: Cuisine filter (exact set match)
+        $afterCuisine = array_filter($afterPlanner, fn($opt) => $this->optionMatchesCuisine($opt, $patientCuisineIds));
+
+        return array_values($afterCuisine);
+    }
+
+    /**
+     * PLANNER TEST #1: [GF,DF] variation added AFTER publishing — patient [GF,DF] still sees it.
+     * This is the exact production bug scenario.
+     */
+    public function testPlannerBypass_VariationAddedAfterPublish_StillVisible()
+    {
+        $this->seedVariationData();
+
+        // Options that were present when menu was published
+        $id1 = $this->insertMenuOption(1, 'Standard Toast', []);
+        $id2 = $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+
+        // This option was added AFTER publishing — not in the planner
+        $id3 = $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $allOptions = $this->getOptionsByMenu(1);
+
+        // Menu planner only has the first 2 options
+        $plannerIds = [$id1, $id2];
+
+        // Patient with [GF,DF] should see the GF+DF option even though it's not in the plan
+        $visible = $this->applyPlannerAndCuisineFilter($allOptions, $plannerIds, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $visibleNames = array_column($visible, 'menu_option_name');
+
+        $this->assertCount(1, $visible, 'Patient [GF,DF] should see GF+DF option even if added after publishing');
+        $this->assertContains('GF+DF Toast', $visibleNames);
+    }
+
+    /**
+     * PLANNER TEST #2: Standard options still respect the menu planner.
+     * Options NOT in the plan and without cuisine values are excluded.
+     */
+    public function testPlannerBypass_StandardOptionsStillFiltered()
+    {
+        $this->seedVariationData();
+
+        $id1 = $this->insertMenuOption(1, 'White Toast', []);
+        $id2 = $this->insertMenuOption(1, 'Brown Toast', []);
+        // This standard option was added after publish — NOT in planner, no cuisine
+        $id3 = $this->insertMenuOption(1, 'Rye Toast', []);
+
+        $allOptions = $this->getOptionsByMenu(1);
+
+        // Only White and Brown in the plan
+        $plannerIds = [$id1, $id2];
+
+        // No-pref patient should see White + Brown but NOT Rye
+        $visible = $this->applyPlannerAndCuisineFilter($allOptions, $plannerIds, []);
+        $visibleNames = array_column($visible, 'menu_option_name');
+
+        $this->assertCount(2, $visible, 'Standard options not in plan should be excluded');
+        $this->assertContains('White Toast', $visibleNames);
+        $this->assertContains('Brown Toast', $visibleNames);
+        $this->assertNotContains('Rye Toast', $visibleNames);
+    }
+
+    /**
+     * PLANNER TEST #3: Dietary variation in plan + dietary variation not in plan.
+     * Both should pass the planner filter, but cuisine filter picks the right one.
+     */
+    public function testPlannerBypass_MixedVariationsInAndOutOfPlan()
+    {
+        $this->seedVariationData();
+
+        $id1 = $this->insertMenuOption(1, 'Standard Toast', []);
+        $id2 = $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        // Added after publishing:
+        $id3 = $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $id4 = $this->insertMenuOption(1, 'DF Toast', [self::CUISINE_DAIRY_FREE]);
+
+        $allOptions = $this->getOptionsByMenu(1);
+        $plannerIds = [$id1, $id2]; // Only standard and GF in plan
+
+        // Patient [GF]: should see only GF Toast (it's in plan AND matches)
+        $visible = $this->applyPlannerAndCuisineFilter($allOptions, $plannerIds, [self::CUISINE_GLUTEN_FREE]);
+        $visibleNames = array_column($visible, 'menu_option_name');
+        $this->assertCount(1, $visible, 'Patient [GF] should see only exact [GF] match');
+        $this->assertContains('GF Toast', $visibleNames);
+
+        // Patient [GF,DF]: should see GF+DF Toast (not in plan but has cuisine → bypasses)
+        $visible2 = $this->applyPlannerAndCuisineFilter($allOptions, $plannerIds, [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $visibleNames2 = array_column($visible2, 'menu_option_name');
+        $this->assertCount(1, $visible2, 'Patient [GF,DF] should see GF+DF despite not being in plan');
+        $this->assertContains('GF+DF Toast', $visibleNames2);
+
+        // Patient [DF]: should see DF Toast (not in plan but has cuisine → bypasses)
+        $visible3 = $this->applyPlannerAndCuisineFilter($allOptions, $plannerIds, [self::CUISINE_DAIRY_FREE]);
+        $visibleNames3 = array_column($visible3, 'menu_option_name');
+        $this->assertCount(1, $visible3, 'Patient [DF] should see DF Toast despite not being in plan');
+        $this->assertContains('DF Toast', $visibleNames3);
+    }
+
+    /**
+     * PLANNER TEST #4: Empty planner → all options shown (planner fallback).
+     */
+    public function testPlannerBypass_EmptyPlannerShowsAll()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Standard Toast', []);
+        $this->insertMenuOption(1, 'GF Toast', [self::CUISINE_GLUTEN_FREE]);
+        $this->insertMenuOption(1, 'GF+DF Toast', [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+
+        $allOptions = $this->getOptionsByMenu(1);
+
+        // Empty planner → no planner filter
+        $visible = $this->applyPlannerAndCuisineFilter($allOptions, [], [self::CUISINE_GLUTEN_FREE, self::CUISINE_DAIRY_FREE]);
+        $visibleNames = array_column($visible, 'menu_option_name');
+
+        $this->assertCount(1, $visible, 'With empty planner, cuisine filter alone should work');
+        $this->assertContains('GF+DF Toast', $visibleNames);
     }
 
     // ═════════════════════════════════════════════════════════════════

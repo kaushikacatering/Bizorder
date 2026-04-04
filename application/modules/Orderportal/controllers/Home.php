@@ -1682,7 +1682,7 @@ class Home extends MY_Controller {
             }
             
             // Fetch all menu items
-            $menus = $this->menu_model->fetchMenuDetails('', true);
+            $menus = $this->menu_model->fetchMenuDetailsWithVariations(true);
             
             // 🆕 SPECIAL ITEMS FEATURE: Filter out special items if patient has < 3 allergies
             if (!$showSpecialItems) {

@@ -933,6 +933,16 @@
             }).filter(Boolean);
         }
 
+        // Helper: check if a menu option has dietary cuisine values (non-empty cuisineValues)
+        // Used to include dietary variation options even if they weren't in the published menu planner
+        function _optionHasCuisine(option) {
+            if (!option.cuisineValues) return false;
+            try {
+                const parsed = typeof option.cuisineValues === 'string' ? JSON.parse(option.cuisineValues) : option.cuisineValues;
+                return Array.isArray(parsed) && parsed.length > 0;
+            } catch(e) { return false; }
+        }
+
         // Helper: check if any variation of a menu matches patient's cuisine preferences AND does not conflict with patient allergies
         // Rules:
         // 1) Patient has preferences (e.g. ["GF","DF"]): only match variations with EXACTLY that cuisine combination, exclude allergen conflicts
@@ -2509,7 +2519,7 @@
                                     
                                     // Calculate allergy filtering for warning display
                                     const bed = bedLists.find(b => b.id == bedId);
-                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)));
+                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));
                                     let safeOptionsCount = allOptionsInPlan.length;
                                     let allergyWarning = '';
                                     
@@ -2561,7 +2571,7 @@
                                             ${allergyWarning}
                                             <div data-is_main_menu="${menu.is_main_menu}" data-singleSelect="${menu.is_single_select}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 menu-options-grid" data-group="${category.id}_${menu.menu_id}" data-max="${menu.inputType === 'radio' ? 1 : 2}">
                                                 ${menu.menu_options
-                                                    .filter(option => menuPlannerOptions.includes(String(option.option_id)))
+                                                    .filter(option => menuPlannerOptions.includes(String(option.option_id)) || _optionHasCuisine(option))
                                                     .filter(option => {
                                                         const bed = bedLists.find(b => b.id == bedId);
                                                         if (!bed) return true;
