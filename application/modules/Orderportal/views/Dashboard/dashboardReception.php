@@ -2718,7 +2718,7 @@
         <i class="fas fa-info-circle text-lg"></i>
     </button>
 ` : ''}
-${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0) ? `<span class="inline-flex flex-wrap gap-1 ml-1">${getCuisineNamesByIds(option._mergedCuisineIds).map(name => `<span class="inline-block px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">${htmlspecialchars(name)}</span>`).join('')}</span>` : ''}
+${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0) ? `<span class="inline-flex flex-wrap gap-1 ml-1">${getCuisineNamesByIds(option._mergedCuisineIds).map(name => `<span class="text-xs font-medium text-green-700">${htmlspecialchars(name)}</span>`).join('<span class="text-xs text-gray-400">,</span>')}</span>` : ''}
                                                             <button type="button" 
                                                                     class="ml-2 text-gray-400 hover:text-orange-600 transition-colors comment-btn p-2 rounded-full hover:bg-gray-100"
                                                                     data-bed-id="${bedId}"
