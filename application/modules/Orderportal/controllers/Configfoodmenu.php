@@ -706,12 +706,20 @@ class Configfoodmenu extends MY_Controller
         }
 
         $menu_detail_id = (int) $this->input->post('menu_detail_id');
+        $menu_option_name = $this->input->post('menu_option_name');
+
+        // If menu_detail_id is 0 but we have an option name, load unlinked options by name
+        if (empty($menu_detail_id) && !empty($menu_option_name)) {
+            $variations = $this->menu_model->get_unlinked_variations_by_name($menu_option_name);
+            echo json_encode(['success' => true, 'variations' => $variations]);
+            return;
+        }
+
         if (empty($menu_detail_id)) {
             echo json_encode(['success' => false, 'message' => 'Invalid menu item.']);
             return;
         }
 
-        $menu_option_name = $this->input->post('menu_option_name');
         $variations = $this->menu_model->get_variations_by_menu($menu_detail_id, $menu_option_name);
         echo json_encode(['success' => true, 'variations' => $variations]);
     }
@@ -756,10 +764,8 @@ class Configfoodmenu extends MY_Controller
         $result = $this->menu_model->save_variation($data, $id ?: null);
 
         if ($result) {
-            // Create link if new option
-            if (empty($id)) {
-                $this->menu_model->add_menu_option_link($menu_detail_id, $result);
-            }
+            // Always ensure the link exists (fixes orphaned/N/A menu options)
+            $this->menu_model->add_menu_option_link($menu_detail_id, $result);
             $variation = $this->menu_model->get_variation($result);
             echo json_encode(['success' => true, 'message' => 'Option saved.', 'variation' => $variation]);
         } else {
@@ -819,9 +825,8 @@ class Configfoodmenu extends MY_Controller
 
             if ($result) {
                 $saved_ids[] = (int)$result;
-                if (empty($vid)) {
-                    $this->menu_model->add_menu_option_link($menu_detail_id, $result);
-                }
+                // Always ensure the link exists (fixes orphaned/N/A menu options)
+                $this->menu_model->add_menu_option_link($menu_detail_id, $result);
             }
         }
 

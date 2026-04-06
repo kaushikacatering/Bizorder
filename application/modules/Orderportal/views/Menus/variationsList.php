@@ -67,7 +67,13 @@ function variationIdsToNames($jsonIds, $list) {
                                             <?php if (!empty($variations)): ?>
                                                 <?php foreach ($variations as $v): ?>
                                                     <tr>
-                                                        <td><?php echo htmlspecialchars($v['menu_name'] ?? 'N/A'); ?></td>
+                                                        <td>
+                                                            <?php if (empty($v['menu_detail_id']) || $v['menu_detail_id'] == 0): ?>
+                                                                <span class="badge bg-warning text-dark">Unlinked</span>
+                                                            <?php else: ?>
+                                                                <?php echo htmlspecialchars($v['menu_name'] ?? 'N/A'); ?>
+                                                            <?php endif; ?>
+                                                        </td>
                                                         <td><?php echo htmlspecialchars($v['menu_option_name'] ?? ''); ?></td>
                                                         <td><?php echo htmlspecialchars($v['description'] ?? ''); ?></td>
                                                         <td><span class="badge bg-info"><?php echo (int)($v['variation_count'] ?? 0); ?></span></td>

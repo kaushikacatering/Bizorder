@@ -554,6 +554,26 @@ return $query->result_array();
     }
 
     /**
+     * Get unlinked menu options by option name (no entry in menu_details_to_menu_options)
+     */
+    public function get_unlinked_variations_by_name($menu_option_name) {
+        $this->tenantDb->select('mo.id, mo.menu_option_name, mo.description,
+            mo.cuisineValues AS cuisine_type_ids,
+            mo.nutritionValues AS nutritional_values,
+            mo.allergenValues,
+            mo.is_special_item');
+        $this->tenantDb->from('menu_options mo');
+        $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id', 'left');
+        $this->tenantDb->where('mdto.main_menu_id IS NULL');
+        $this->tenantDb->where('mo.menu_option_name', $menu_option_name);
+        $this->tenantDb->where('mo.status', 1);
+        $this->tenantDb->where('mo.is_deleted', 0);
+        $this->tenantDb->order_by('mo.id', 'ASC');
+        $query = $this->tenantDb->get();
+        return $query->result_array();
+    }
+
+    /**
      * Get all active menu items (for the Menu Item dropdown on management page)
      */
     public function get_all_menu_items_for_dropdown() {
@@ -573,8 +593,8 @@ return $query->result_array();
         $this->tenantDb->select('MIN(mo.id) AS id, mo.menu_option_name, 
             MIN(mo.description) AS description,
             COUNT(mo.id) AS variation_count,
-            mdto.main_menu_id AS menu_detail_id,
-            md.name AS menu_name');
+            COALESCE(mdto.main_menu_id, 0) AS menu_detail_id,
+            COALESCE(md.name, "Unlinked") AS menu_name');
         $this->tenantDb->from('menu_options mo');
         $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id', 'left');
         $this->tenantDb->join('menuDetails md', 'md.id = mdto.main_menu_id', 'left');

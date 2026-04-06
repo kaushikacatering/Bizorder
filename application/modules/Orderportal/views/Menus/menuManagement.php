@@ -382,9 +382,14 @@ function saveVariationRow(btn) {
     }
 
     const id = row.dataset.id || '';
-    const menuDetailId = row.dataset.menuId || selectedMenuId;
+    const menuDetailId = selectedMenuId || row.dataset.menuId;
     const allergenIds = getCheckedValues(allergenWidget);
     const optionName = document.getElementById('menuOptionName').value.trim();
+
+    if (!menuDetailId || menuDetailId == '0') {
+        showToast('Please select a Menu Item first.', 'warning');
+        return;
+    }
 
     row.querySelectorAll('button').forEach(b => b.disabled = true);
 
@@ -573,6 +578,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (PAGE_MODE === 'edit' && PRESELECT_MENU_ID && sel.value) {
         sel.value = PRESELECT_MENU_ID;
         sel.dispatchEvent(new Event('change'));
+    } else if (PAGE_MODE === 'edit' && !PRESELECT_MENU_ID && EDIT_OPTION_NAME) {
+        // Unlinked menu option: load variations by name, prompt user to select a menu
+        document.getElementById('variationsCard').style.display = '';
+        document.getElementById('menuOptionNameWrap').style.display = '';
+        document.getElementById('menuOptionDescWrap').style.display = '';
+        document.getElementById('saveAllTopWrap').style.display = '';
+        document.getElementById('saveAllBottomWrap').style.display = '';
+        document.getElementById('variationsHeading').textContent = 'Variations for: ' + EDIT_OPTION_NAME;
+        showToast('This option is not linked to any menu. Please select a Menu Item and save to fix it.', 'warning');
+        loadVariations(0, EDIT_OPTION_NAME);
     }
 });
 </script>
