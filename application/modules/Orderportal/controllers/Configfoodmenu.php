@@ -869,12 +869,17 @@ class Configfoodmenu extends MY_Controller
         $menu_detail_id = (int) $this->input->post('menu_detail_id');
         $option_name = $this->security->xss_clean(trim($this->input->post('option_name')));
 
-        if (empty($menu_detail_id) || $option_name === '') {
+        if ($option_name === '') {
             echo json_encode(['success' => false, 'message' => 'Invalid parameters.']);
             return;
         }
 
-        $result = $this->menu_model->delete_variations_by_option_name($menu_detail_id, $option_name);
+        if ($menu_detail_id > 0) {
+            $result = $this->menu_model->delete_variations_by_option_name($menu_detail_id, $option_name);
+        } else {
+            // Unlinked options: delete by option name where no link exists
+            $result = $this->menu_model->delete_unlinked_by_option_name($option_name);
+        }
         echo json_encode(['success' => $result, 'message' => $result ? 'Menu option and all its variations deleted.' : 'Failed to delete.']);
     }
 

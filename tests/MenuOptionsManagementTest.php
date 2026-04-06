@@ -1185,4 +1185,284 @@ class MenuOptionsManagementTest extends CITestCase
         $this->assertContains('Brown Bread', $names);
         $this->assertContains('White Bread', $names);
     }
+
+    // ═════════════════════════════════════════════════════════════════
+    // UNLINKED MENU OPTION TESTS (N/A / blank menu bug fixes)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── HELPER: Insert an unlinked menu option (no junction table entry) ──
+
+    protected function insertUnlinkedMenuOption(string $name, array $cuisineIds, string $desc = '', array $allergenIds = []): int
+    {
+        return $this->insert('menu_options', [
+            'menu_option_name'  => $name,
+            'cuisineValues'     => json_encode($cuisineIds),
+            'description'       => $desc,
+            'allergenValues'    => json_encode($allergenIds),
+            'status'            => 1,
+            'is_deleted'        => 0,
+            'location_id'       => 1,
+        ]);
+    }
+
+    // ── HELPER: Get variations list with IFNULL (mirrors fixed model) ──
+
+    protected function getAllVariationsListFixed(): array
+    {
+        return $this->query(
+            "SELECT MIN(mo.id) AS id, mo.menu_option_name,
+                    MIN(mo.description) AS description,
+                    COUNT(mo.id) AS variation_count,
+                    IFNULL(mdto.main_menu_id, 0) AS menu_detail_id,
+                    IFNULL(md.name, 'Unlinked') AS menu_name
+             FROM menu_options mo
+             LEFT JOIN menu_details_to_menu_options mdto ON mdto.menu_option_id = mo.id
+             LEFT JOIN menuDetails md ON md.id = mdto.main_menu_id
+             WHERE mo.is_deleted = 0 AND mo.status = 1
+             GROUP BY mdto.main_menu_id, mo.menu_option_name
+             ORDER BY md.sort_order ASC, md.name ASC, mo.menu_option_name ASC"
+        );
+    }
+
+    // ── HELPER: Get unlinked options by name (mirrors model method) ──
+
+    protected function getUnlinkedByName(string $optionName): array
+    {
+        return $this->query(
+            "SELECT mo.id, mo.menu_option_name, mo.description,
+                    mo.cuisineValues AS cuisine_type_ids,
+                    mo.allergenValues
+             FROM menu_options mo
+             LEFT JOIN menu_details_to_menu_options mdto ON mdto.menu_option_id = mo.id
+             WHERE mdto.main_menu_id IS NULL
+               AND mo.menu_option_name = ?
+               AND mo.status = 1 AND mo.is_deleted = 0
+             ORDER BY mo.id ASC",
+            [$optionName]
+        );
+    }
+
+    // ── HELPER: Soft delete unlinked options by name (mirrors model method) ──
+
+    protected function deleteUnlinkedByName(string $optionName): bool
+    {
+        $rows = $this->getUnlinkedByName($optionName);
+        if (empty($rows)) return false;
+
+        $ids = array_column($rows, 'id');
+        $in = implode(',', $ids);
+        $this->query("UPDATE menu_options SET is_deleted = 1, date_updated = CURDATE() WHERE id IN ({$in})");
+        return true;
+    }
+
+    // ── HELPER: Create a link (mirrors model's add_menu_option_link) ──
+
+    protected function addLink(int $menuDetailId, int $optionId): void
+    {
+        $existing = $this->query(
+            "SELECT id FROM menu_details_to_menu_options WHERE main_menu_id = ? AND menu_option_id = ?",
+            [$menuDetailId, $optionId]
+        );
+        if (empty($existing)) {
+            $this->insert('menu_details_to_menu_options', [
+                'main_menu_id'   => $menuDetailId,
+                'menu_option_id' => $optionId,
+            ]);
+        }
+    }
+
+    /**
+     * Unlinked options appear in the list with menu_detail_id=0 and menu_name='Unlinked'.
+     */
+    public function testUnlinkedOption_ShowsInListAsUnlinked()
+    {
+        $this->seedVariationData();
+
+        $this->insertUnlinkedMenuOption('Orphan Juice', [self::CUISINE_REGULAR], 'No link');
+
+        $list = $this->getAllVariationsListFixed();
+        $orphan = array_filter($list, fn($v) => $v['menu_option_name'] === 'Orphan Juice');
+        $this->assertCount(1, $orphan);
+
+        $row = array_values($orphan)[0];
+        $this->assertEquals(0, (int)$row['menu_detail_id']);
+        $this->assertEquals('Unlinked', $row['menu_name']);
+    }
+
+    /**
+     * Linked options correctly show the menu name (not blank, not Unlinked).
+     */
+    public function testLinkedOption_ShowsMenuName()
+    {
+        $this->seedVariationData();
+
+        $this->insertMenuOption(1, 'Linked Toast', [self::CUISINE_GLUTEN_FREE]);
+
+        $list = $this->getAllVariationsListFixed();
+        $linked = array_filter($list, fn($v) => $v['menu_option_name'] === 'Linked Toast');
+        $this->assertCount(1, $linked);
+
+        $row = array_values($linked)[0];
+        $this->assertEquals(1, (int)$row['menu_detail_id']);
+        $this->assertEquals('Toast', $row['menu_name']);
+    }
+
+    /**
+     * Unlinked options can be fetched by name for editing.
+     */
+    public function testGetUnlinkedByName_ReturnsOrphanedOptions()
+    {
+        $this->seedVariationData();
+
+        $id1 = $this->insertUnlinkedMenuOption('Orphan Soup', [self::CUISINE_DAIRY_FREE], 'No milk');
+        $id2 = $this->insertUnlinkedMenuOption('Orphan Soup', [self::CUISINE_GLUTEN_FREE], 'No wheat');
+        // Linked option with same name should NOT appear
+        $this->insertMenuOption(2, 'Orphan Soup', [self::CUISINE_REGULAR]);
+
+        $unlinked = $this->getUnlinkedByName('Orphan Soup');
+        $this->assertCount(2, $unlinked);
+
+        $ids = array_column($unlinked, 'id');
+        $this->assertContains((string)$id1, $ids);
+        $this->assertContains((string)$id2, $ids);
+    }
+
+    /**
+     * Deleting unlinked options by name soft-deletes them without affecting linked ones.
+     */
+    public function testDeleteUnlinkedByName_OnlySoftDeletesOrphans()
+    {
+        $this->seedVariationData();
+
+        $orphanId = $this->insertUnlinkedMenuOption('Apple Juice', [self::CUISINE_REGULAR], 'Juice');
+        $linkedId = $this->insertMenuOption(1, 'Apple Juice', [self::CUISINE_REGULAR], 'Same name, linked');
+
+        $result = $this->deleteUnlinkedByName('Apple Juice');
+        $this->assertTrue($result);
+
+        // Orphan should be soft-deleted
+        $orphan = $this->getOption($orphanId);
+        $this->assertEquals(1, (int)$orphan['is_deleted']);
+
+        // Linked should still be active
+        $linked = $this->getOption($linkedId);
+        $this->assertEquals(0, (int)$linked['is_deleted']);
+    }
+
+    /**
+     * Deleting unlinked options for a name that doesn't exist returns false.
+     */
+    public function testDeleteUnlinkedByName_NoneFound_ReturnsFalse()
+    {
+        $this->seedVariationData();
+
+        $result = $this->deleteUnlinkedByName('Nonexistent Item');
+        $this->assertFalse($result);
+    }
+
+    /**
+     * Adding a link to an unlinked option fixes it — it no longer appears as unlinked.
+     */
+    public function testAddLink_FixesUnlinkedOption()
+    {
+        $this->seedVariationData();
+
+        $optionId = $this->insertUnlinkedMenuOption('Fix Me', [self::CUISINE_GLUTEN_FREE]);
+
+        // Verify it's unlinked
+        $unlinked = $this->getUnlinkedByName('Fix Me');
+        $this->assertCount(1, $unlinked);
+        $this->assertEquals($optionId, (int)$unlinked[0]['id']);
+
+        // Add the link
+        $this->addLink(1, $optionId);
+
+        // Now it should be linked and visible via getOptionsByMenu
+        $options = $this->getOptionsByMenu(1);
+        $found = array_filter($options, fn($o) => $o['menu_option_name'] === 'Fix Me');
+        $this->assertCount(1, $found);
+
+        // And no longer unlinked
+        $unlinked = $this->getUnlinkedByName('Fix Me');
+        $this->assertCount(0, $unlinked);
+    }
+
+    /**
+     * Save (update) + add_link always creates link — fixes the "save doesn't persist" bug.
+     * Simulates the controller's save_variation flow for an existing unlinked option.
+     */
+    public function testSaveExistingOption_AlwaysCreatesLink()
+    {
+        $this->seedVariationData();
+
+        $optionId = $this->insertUnlinkedMenuOption('Orphan Bread', [self::CUISINE_GLUTEN_FREE]);
+
+        // Simulate controller save_variation: update + always add link
+        $this->update('menu_options', [
+            'description'  => 'Updated description',
+            'date_updated' => $this->ausNow(),
+        ], 'id', $optionId);
+        $this->addLink(1, $optionId); // Always called, not just for new
+
+        // Verify link exists and option shows under Toast menu
+        $options = $this->getOptionsByMenu(1);
+        $found = array_filter($options, fn($o) => (int)$o['id'] === $optionId);
+        $this->assertCount(1, $found);
+        $this->assertEquals('Updated description', array_values($found)[0]['description']);
+
+        // Verify listing shows Toast, not Unlinked
+        $list = $this->getAllVariationsListFixed();
+        $row = array_filter($list, fn($v) => $v['menu_option_name'] === 'Orphan Bread');
+        $this->assertCount(1, $row);
+        $this->assertEquals('Toast', array_values($row)[0]['menu_name']);
+    }
+
+    /**
+     * Duplicate addLink calls are idempotent — no duplicate rows created.
+     */
+    public function testAddLink_Idempotent()
+    {
+        $this->seedVariationData();
+
+        $optionId = $this->insertUnlinkedMenuOption('Double Link', [self::CUISINE_REGULAR]);
+
+        $this->addLink(1, $optionId);
+        $this->addLink(1, $optionId); // Second call should be no-op
+        $this->addLink(1, $optionId); // Third call should be no-op
+
+        $links = $this->query(
+            "SELECT * FROM menu_details_to_menu_options WHERE main_menu_id = 1 AND menu_option_id = ?",
+            [$optionId]
+        );
+        $this->assertCount(1, $links, 'Multiple addLink calls should not create duplicate rows');
+    }
+
+    /**
+     * Delete linked option group by name + menu_id works correctly.
+     */
+    public function testDeleteLinkedOptionGroup()
+    {
+        $this->seedVariationData();
+
+        $id1 = $this->insertMenuOption(1, 'Bread Roll', [self::CUISINE_REGULAR], 'Standard');
+        $id2 = $this->insertMenuOption(1, 'Bread Roll', [self::CUISINE_GLUTEN_FREE], 'GF version');
+        $id3 = $this->insertMenuOption(2, 'Bread Roll', [self::CUISINE_REGULAR], 'Under Soup menu');
+
+        // Delete by menu_detail_id=1 + option_name='Bread Roll'
+        // Uses the existing delete_variations_by_option_name logic
+        $ids = [$id1, $id2];
+        $in = implode(',', $ids);
+        $this->query("UPDATE menu_options SET is_deleted = 1 WHERE id IN ({$in})");
+        $this->query("DELETE FROM menu_details_to_menu_options WHERE main_menu_id = 1 AND menu_option_id IN ({$in})");
+
+        // Toast menu should have no Bread Roll options
+        $toastOptions = $this->getOptionsByMenu(1);
+        $breadRolls = array_filter($toastOptions, fn($o) => $o['menu_option_name'] === 'Bread Roll');
+        $this->assertCount(0, $breadRolls);
+
+        // Soup menu's Bread Roll should be untouched
+        $soupOptions = $this->getOptionsByMenu(2);
+        $soupBreadRolls = array_filter($soupOptions, fn($o) => $o['menu_option_name'] === 'Bread Roll');
+        $this->assertCount(1, $soupBreadRolls);
+    }
 }

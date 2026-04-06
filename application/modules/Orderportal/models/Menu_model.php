@@ -554,6 +554,26 @@ return $query->result_array();
     }
 
     /**
+     * Soft delete unlinked menu options by option name (no entry in menu_details_to_menu_options)
+     */
+    public function delete_unlinked_by_option_name($option_name) {
+        $this->tenantDb->select('mo.id');
+        $this->tenantDb->from('menu_options mo');
+        $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id', 'left');
+        $this->tenantDb->where('mdto.main_menu_id IS NULL');
+        $this->tenantDb->where('mo.menu_option_name', $option_name);
+        $this->tenantDb->where('mo.is_deleted', 0);
+        $rows = $this->tenantDb->get()->result_array();
+
+        if (empty($rows)) return false;
+
+        $ids = array_column($rows, 'id');
+        $this->tenantDb->where_in('id', $ids);
+        $this->tenantDb->update('menu_options', ['is_deleted' => 1, 'date_updated' => date('Y-m-d')]);
+        return true;
+    }
+
+    /**
      * Get unlinked menu options by option name (no entry in menu_details_to_menu_options)
      */
     public function get_unlinked_variations_by_name($menu_option_name) {
@@ -590,17 +610,17 @@ return $query->result_array();
      * Get all menu options joined with their linked menu names (for the listing page)
      */
     public function get_all_variations_list() {
-        $this->tenantDb->select('MIN(mo.id) AS id, mo.menu_option_name, 
+        $this->tenantDb->select("MIN(mo.id) AS id, mo.menu_option_name, 
             MIN(mo.description) AS description,
             COUNT(mo.id) AS variation_count,
-            COALESCE(mdto.main_menu_id, 0) AS menu_detail_id,
-            COALESCE(md.name, "Unlinked") AS menu_name');
+            IFNULL(mdto.main_menu_id, 0) AS menu_detail_id,
+            IFNULL(md.name, 'Unlinked') AS menu_name", FALSE);
         $this->tenantDb->from('menu_options mo');
         $this->tenantDb->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id', 'left');
         $this->tenantDb->join('menuDetails md', 'md.id = mdto.main_menu_id', 'left');
         $this->tenantDb->where('mo.is_deleted', 0);
         $this->tenantDb->where('mo.status', 1);
-        $this->tenantDb->group_by(['mdto.main_menu_id', 'mo.menu_option_name']);
+        $this->tenantDb->group_by('mdto.main_menu_id, mo.menu_option_name');
         $this->tenantDb->order_by('md.sort_order', 'ASC');
         $this->tenantDb->order_by('md.name', 'ASC');
         $this->tenantDb->order_by('mo.menu_option_name', 'ASC');
