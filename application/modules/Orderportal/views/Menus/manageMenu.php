@@ -463,7 +463,17 @@ label span[style*="color: #ef4444"] {
                                                 <small>Select Yes if you want no other restricted menu can be ordred along with this</small>
                                             </div>
                                             
-                                            
+                                            <!-- Common Item -->
+                                            <div class="col-span-1">
+                                                <label class="block text-sm font-medium text-gray-700 mb-1">Common Item</label>
+                                                <div class="relative flex items-center mt-2">
+                                                    <input type="hidden" name="is_common_item" value="0">
+                                                    <input type="checkbox" id="is_common_item" name="is_common_item" value="1" class="w-5 h-5 text-blue-600 border-2 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer" 
+                                                           <?php echo isset($menu['is_common_item']) && $menu['is_common_item'] == 1 ? 'checked' : ''; ?>>
+                                                    <label for="is_common_item" class="ml-2 text-sm text-gray-700 cursor-pointer">Mark as Common Item</label>
+                                                </div>
+                                                <small>If checked, all options under this item will be shown to every patient (only allergen filtering applies, dietary preferences are ignored)</small>
+                                            </div>
                                             
                                             <!-- Price -->
                                           

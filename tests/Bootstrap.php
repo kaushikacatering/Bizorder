@@ -119,38 +119,42 @@ class CITestCase extends \PHPUnit\Framework\TestCase
         // Floor
         $this->insert('foodmenuconfig', [
             'id' => 1, 'name' => 'Ground Floor', 'listtype' => 'floor',
-            'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         // Categories
         $this->insert('foodmenuconfig', [
             'id' => self::BREAKFAST, 'name' => 'Breakfast', 'listtype' => 'category',
-            'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::LUNCH, 'name' => 'Lunch', 'listtype' => 'category',
-            'sort_order' => 2, 'is_deleted' => 0, 'location_id' => 1,
+            'sort_order' => 2, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::DINNER, 'name' => 'Dinner', 'listtype' => 'category',
-            'sort_order' => 3, 'is_deleted' => 0, 'location_id' => 1,
+            'sort_order' => 3, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         // Menu items
         $this->insert('menuDetails', [
             'id' => 1, 'name' => 'Toast', 'sort_order' => 1,
             'category' => self::BREAKFAST, 'status' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'date_created' => '2026-01-01', 'date_updated' => '2026-01-01',
         ]);
         $this->insert('menuDetails', [
             'id' => 2, 'name' => 'Soup', 'sort_order' => 1,
             'category' => self::LUNCH, 'status' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'date_created' => '2026-01-01', 'date_updated' => '2026-01-01',
         ]);
         $this->insert('menuDetails', [
             'id' => 3, 'name' => 'Steak', 'sort_order' => 1,
             'category' => self::DINNER, 'status' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'date_created' => '2026-01-01', 'date_updated' => '2026-01-01',
         ]);
         // Menu option
         $this->insert('menu_options', [
             'id' => 1, 'menu_option_name' => 'Regular',
             'menu_color' => '#000', 'status' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'date_created' => '2026-01-01', 'date_updated' => '2026-01-01',
         ]);
         // Two suites (floor is varchar in real schema)
         $this->insert('suites', [

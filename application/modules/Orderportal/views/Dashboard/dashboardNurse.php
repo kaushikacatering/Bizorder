@@ -1402,21 +1402,28 @@
         // 3) Single preference: exact match with just that 1 cuisine
         function menuHasMatchingVariation(menu, patientCuisineIds, patientAllergyIds) {
             if (!menu.variations || menu.variations.length === 0) return true; // No variations = show everything (backward compat)
+            
+            // COMMON ITEM: Skip dietary preference filtering, only check allergens
+            const isCommonItem = menu.is_common_item == 1 || menu.is_common_item === '1';
+            
             const patientIds = (patientCuisineIds || []).map(String).sort();
             const allergyIds = (patientAllergyIds || []).map(String);
             return menu.variations.some(v => {
                 try {
-                    const vCuisineIds = (typeof v.cuisine_type_ids === 'string' ? JSON.parse(v.cuisine_type_ids) : v.cuisine_type_ids) || [];
-                    const vCuisineStrs = vCuisineIds.map(String).sort();
-                    
-                    // EXACT SET MATCH for cuisine:
-                    if (patientIds.length === 0) {
-                        // No dietary preferences: only match standard variations (empty cuisine)
-                        if (vCuisineStrs.length !== 0) return false;
-                    } else {
-                        // Has dietary preferences: variation must have EXACTLY the same set of cuisines
-                        if (vCuisineStrs.length !== patientIds.length) return false;
-                        if (!patientIds.every((id, i) => id === vCuisineStrs[i])) return false;
+                    // Only apply cuisine/dietary filtering if NOT a common item
+                    if (!isCommonItem) {
+                        const vCuisineIds = (typeof v.cuisine_type_ids === 'string' ? JSON.parse(v.cuisine_type_ids) : v.cuisine_type_ids) || [];
+                        const vCuisineStrs = vCuisineIds.map(String).sort();
+                        
+                        // EXACT SET MATCH for cuisine:
+                        if (patientIds.length === 0) {
+                            // No dietary preferences: only match standard variations (empty cuisine)
+                            if (vCuisineStrs.length !== 0) return false;
+                        } else {
+                            // Has dietary preferences: variation must have EXACTLY the same set of cuisines
+                            if (vCuisineStrs.length !== patientIds.length) return false;
+                            if (!patientIds.every((id, i) => id === vCuisineStrs[i])) return false;
+                        }
                     }
                     
                     // Check allergen exclusion: variation allergens must NOT overlap with patient allergies

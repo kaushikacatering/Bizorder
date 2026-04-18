@@ -34,32 +34,32 @@ class MenuOptionsManagementTest extends CITestCase
     {
         $this->insert('foodmenuconfig', [
             'id' => self::CUISINE_GLUTEN_FREE, 'name' => 'Gluten Free',
-            'listtype' => 'cuisine', 'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'cuisine', 'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::CUISINE_DAIRY_FREE, 'name' => 'Dairy Free',
-            'listtype' => 'cuisine', 'sort_order' => 2, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'cuisine', 'sort_order' => 2, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::CUISINE_SUGAR_FREE, 'name' => 'Sugar Free',
-            'listtype' => 'cuisine', 'sort_order' => 3, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'cuisine', 'sort_order' => 3, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::CUISINE_REGULAR, 'name' => 'Regular',
-            'listtype' => 'cuisine', 'sort_order' => 4, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'cuisine', 'sort_order' => 4, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
 
         $this->insert('foodmenuconfig', [
             'id' => self::ALLERGEN_NUTS, 'name' => 'Nuts',
-            'listtype' => 'allergen', 'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'allergen', 'sort_order' => 1, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::ALLERGEN_DAIRY, 'name' => 'Dairy',
-            'listtype' => 'allergen', 'sort_order' => 2, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'allergen', 'sort_order' => 2, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
         $this->insert('foodmenuconfig', [
             'id' => self::ALLERGEN_GLUTEN, 'name' => 'Gluten',
-            'listtype' => 'allergen', 'sort_order' => 3, 'is_deleted' => 0, 'location_id' => 1,
+            'listtype' => 'allergen', 'sort_order' => 3, 'is_deleted' => 0, 'location_id' => 1, 'created_date' => '2026-01-01',
         ]);
     }
 
@@ -76,6 +76,8 @@ class MenuOptionsManagementTest extends CITestCase
             'status'            => 1,
             'is_deleted'        => 0,
             'location_id'       => 1,
+            'date_created'      => '2026-01-01',
+            'date_updated'      => '2026-01-01',
         ]);
 
         // Create the link
@@ -1202,6 +1204,8 @@ class MenuOptionsManagementTest extends CITestCase
             'status'            => 1,
             'is_deleted'        => 0,
             'location_id'       => 1,
+            'date_created'      => '2026-01-01',
+            'date_updated'      => '2026-01-01',
         ]);
     }
 

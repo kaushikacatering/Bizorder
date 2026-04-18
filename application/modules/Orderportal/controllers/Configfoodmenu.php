@@ -357,6 +357,7 @@ class Configfoodmenu extends MY_Controller
             'inputType' => $this->input->post('inputType'),
             'is_single_select' => $this->input->post('is_single_select'), // such menu can be selected only one menu per category(breakfast, lunch dinner are categories)
             'is_main_menu' => $this->input->post('is_main_menu'), // no other restricted menu can be ordred along with this main menu
+            'is_common_item' => $this->input->post('is_common_item') ? 1 : 0, // if common item, show to all patients ignoring dietary preferences
             'cuisine' => $this->input->post('cuisine'),
             'description' => $this->input->post('description'),
             'sort_order' => (int) $this->input->post('sort_order'),
