@@ -575,11 +575,11 @@ label span[style*="color: #ef4444"] {
                                                 </button>
                                             </div>
                                             
-                                            <!-- Selected Items -->
+                                            <!-- Selected Options -->
                                             <div class="flex-1 border border-gray-200 rounded-lg">
                                                 <div class="p-3 bg-gray-50 border-b border-gray-200 rounded-t-lg">
                                                     <div class="flex items-center justify-between">
-                                                        <h4 class="font-medium text-gray-700">Selected Items</h4>
+                                                        <h4 class="font-medium text-gray-700">Selected Options</h4>
                                                         <div class="flex items-center">
                                                             <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200" id="selected-count">
                                                                 <i class="fa-solid fa-check-circle mr-1 text-xs"></i>

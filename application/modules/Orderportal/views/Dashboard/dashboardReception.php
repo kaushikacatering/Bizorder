@@ -2582,11 +2582,15 @@
                                                         const bed = bedLists.find(b => b.id == bedId);
                                                         if (!bed) return true;
                                                         
+                                                        // COMMON ITEM: Skip cuisine filtering, only check allergens
+                                                        const isCommonItem = menu.is_common_item == 1 || menu.is_common_item === '1';
+                                                        
                                                         // CUISINE FILTERING (EXACT SET MATCH):
                                                         // - Patient has preferences: show only items with EXACTLY that cuisine combination
                                                         // - Patient has NO preferences: show only standard items (empty cuisine)
+                                                        // - COMMON ITEMS: Skip cuisine filtering entirely
                                                         let matchesCuisine = true;
-                                                        {
+                                                        if (!isCommonItem) {
                                                             let patientCuisines = [];
                                                             if (bed.patient_dietary_preferences && bed.patient_dietary_preferences !== 'null' && bed.patient_dietary_preferences !== '[]' && bed.patient_dietary_preferences !== null) {
                                                                 try { patientCuisines = JSON.parse(bed.patient_dietary_preferences) || []; } catch(e) {}
@@ -2613,7 +2617,7 @@
                                                                 // Has preferences: EXACT set match required
                                                                 matchesCuisine = (patientSet.length === itemSet.length) && patientSet.every((id, i) => id === itemSet[i]);
                                                             }
-                                                        }
+                                                        } // end if (!isCommonItem)
                                                         
                                                         // ALLERGEN FILTERING: Hide items that conflict with patient allergies
                                                         let matchesAllergen = true;
