@@ -301,7 +301,9 @@ function getAllergenNames($allergenValues, $allergies) {
                                                                 <?php foreach ($groupedOptions as $optName => $group) {
                                                                     $firstOptionId = $group['option_ids'][0];
                                                                     // Check if ANY option_id in this group was saved
-                                                                    $groupChecked = $defaultAllChecked;
+                                                                    // Common items default to checked when creating a new menu planner
+                                                                    $isCommonDefault = (isset($menu['is_common_item']) && $menu['is_common_item'] == 1) ? 'checked' : $defaultAllChecked;
+                                                                    $groupChecked = $isCommonDefault;
                                                                     if (isset($savedMenuWithOptions[$categoryId][$menuId]) && !empty($savedMenuWithOptions[$categoryId][$menuId])) {
                                                                         $hasAnySaved = false;
                                                                         foreach ($group['option_ids'] as $oid) {
@@ -310,7 +312,7 @@ function getAllergenNames($allergenValues, $allergies) {
                                                                                 break;
                                                                             }
                                                                         }
-                                                                        $groupChecked = $hasAnySaved ? 'checked' : $defaultAllChecked;
+                                                                        $groupChecked = $hasAnySaved ? 'checked' : $isCommonDefault;
                                                                     }
                                                                 ?>
                                                                     <div class="bg-gray-50 hover:bg-gray-100 transition-colors rounded-md p-2 flex items-center">
@@ -348,8 +350,11 @@ function getAllergenNames($allergenValues, $allergies) {
                                                             </div>
                                                         <?php } else { ?>
                                                             <?php
+                                                            // Common items default to checked when creating a new menu planner
+                                                            $isCommonDefault = (isset($menu['is_common_item']) && $menu['is_common_item'] == 1) ? 'checked' : $defaultAllChecked;
+                                                            $isChecked = $isCommonDefault;
                                                             if(isset($savedMenuWithoutOptions[$categoryId]) && !empty(isset($savedMenuWithoutOptions[$categoryId]))){
-                                                                $isChecked = in_array($menuId, $savedMenuWithoutOptions[$categoryId]) ? 'checked' : $defaultAllChecked;
+                                                                $isChecked = in_array($menuId, $savedMenuWithoutOptions[$categoryId]) ? 'checked' : $isCommonDefault;
                                                             }
                                                             ?>
                                                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2"> <!-- Reduced gap-3 to gap-2 -->
