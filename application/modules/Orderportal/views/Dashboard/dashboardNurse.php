@@ -2834,30 +2834,11 @@
                    
 
 
-                    // let categoryMenus = menuList.filter(m => 
-                    //     m.category_ids && m.category_ids.includes(category.id) && 
-                    //     ((savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
-                    //      (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0)
-                    // );
-                    
-              const forcedMenuIds = ['83', '84'];         // Fresh Fruits + Lunch Beverages , rmeove this code on 29th jan and uncomment above one
                     let categoryMenus = menuList.filter(m => 
-    m.category_ids && m.category_ids.includes(category.id) && 
-    (
-        forcedMenuIds.includes(m.menu_id) ||   // 👈 always include these
-        (savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
-        (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0
-    )
-);
-
-// remove this above one
-
-
-                    
-                    // If no saved menus and we have a published menu, show all available menus for this category
-                    if (categoryMenus.length === 0 && hasMenu) {
-                        categoryMenus = menuList.filter(m => m.category_ids && m.category_ids.includes(category.id));
-                    }
+                        m.category_ids && m.category_ids.includes(category.id) && 
+                        ((savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
+                         (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0)
+                    );
 
                     // VARIATION FILTERING: Apply cuisine exact-match + allergen filtering for ALL patients
                     // - Patient with preferences: show only menus with exact cuisine match
@@ -2917,16 +2898,13 @@
                                     'Cereal': 'fa-bowl-food'
                                 }[menu.menu_name] || 'fa-utensils';
 
-                                if (menu.menu_options && menu.menu_options.length > 0 && (savedWithOptions[category.id]?.[menu.menu_id] || hasMenu)) {
-                                    // ✅ CRITICAL FIX: Use savedWithOptions if available, otherwise fallback to showing all options when menu is published
+                                if (menu.menu_options && menu.menu_options.length > 0 && savedWithOptions[category.id]?.[menu.menu_id]) {
                                     const menuPlannerOptions = savedWithOptions[category.id]?.[menu.menu_id] || [];
                                     
                                     // Calculate allergy filtering for warning display
                                     const bed = bedLists.find(b => b.id == bedId);
-                                    // ✅ CRITICAL FIX: If menuPlannerOptions is empty but hasMenu is true, show all options
-                                    const allOptionsInPlan = menuPlannerOptions.length > 0 
-                                        ? menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt))
-                                        : menu.menu_options; // Show all options if menu planner data is missing
+                                    // Only show options that are in the published menu planner (+ dietary variations)
+                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));
                                     let safeOptionsCount = allOptionsInPlan.length;
                                     let allergyWarning = '';
                                     
@@ -2976,9 +2954,7 @@
                                             </h3>
                                             ${allergyWarning}
                                             <div data-is_main_menu="${menu.is_main_menu}" data-singleSelect="${menu.is_single_select}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 menu-options-grid" data-group="${category.id}_${menu.menu_id}" data-max="${menu.inputType === 'radio' ? 1 : 2}">
-                                                ${(menuPlannerOptions.length > 0 
-                                                    ? menu.menu_options.filter(option => menuPlannerOptions.includes(String(option.option_id)) || _optionHasCuisine(option))
-                                                    : menu.menu_options) // Show all options if menu planner data is missing
+                                                ${menu.menu_options.filter(option => menuPlannerOptions.includes(String(option.option_id)) || _optionHasCuisine(option))
                                                     .filter(option => {
                                                         const bed = bedLists.find(b => b.id == bedId);
                                                         if (!bed) return true;
@@ -3190,14 +3166,11 @@ ${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0) ? `<span cla
                                             ` : ''}
                                         </div>
                                     `;
-                                } else if (hasMenu && menu.menu_options && menu.menu_options.length > 0) {
-                                    // ✅ CRITICAL FIX: If published menu exists but savedWithOptions is empty/missing,
-                                    // show ALL menu options (fallback to prevent empty menu display)
+                                } else if (savedWithOptions[category.id]?.[menu.menu_id] && menu.menu_options && menu.menu_options.length > 0) {
+                                    // Fallback: menu is in planner but wasn't caught by first path
                                     const menuPlannerOptions = savedWithOptions[category.id]?.[menu.menu_id] || [];
-                                    // If menuPlannerOptions is empty but menu has options, show all options
-                                    const optionsToShow = menuPlannerOptions.length > 0 
-                                        ? menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt))
-                                        : menu.menu_options; // Show all options if menu planner data is missing
+                                    // Only show options that are in the published menu planner (+ dietary variations)
+                                    const optionsToShow = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));
                                     
                                     const bed = bedLists.find(b => b.id == bedId);
                                     // Apply allergy/cuisine filtering

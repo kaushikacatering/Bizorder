@@ -2436,31 +2436,11 @@
                 categoryList.forEach(category => {
                     
                     // First check if there are saved menus for this category
-                    // let categoryMenus = menuList.filter(m => 
-                    //     m.category_ids && m.category_ids.includes(category.id) && 
-                    //     ((savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
-                    //      (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0)
-                    // );
-                    
-                    
-                    // rmeove this code on 29th jan and uncomment above one 
-                    const forcedMenuIds = ['83', '84'];
-                    
-                     let categoryMenus = menuList.filter(m => 
-    m.category_ids && m.category_ids.includes(category.id) && 
-    (
-        forcedMenuIds.includes(m.menu_id) ||   // 👈 always include these
-        (savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
-        (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0
-    )
-);
-
-            //   rmeove this code on 29th jan and uncomment above one END .     
-                    
-                    // If no saved menus and we have a published menu, show all available menus for this category
-                    if (categoryMenus.length === 0 && hasMenu) {
-                        categoryMenus = menuList.filter(m => m.category_ids && m.category_ids.includes(category.id));
-                    }
+                    let categoryMenus = menuList.filter(m => 
+                        m.category_ids && m.category_ids.includes(category.id) && 
+                        ((savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
+                         (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0)
+                    );
 
                     // VARIATION FILTERING: Apply cuisine exact-match + allergen filtering for ALL patients
                     // - Patient with preferences: show only menus with exact cuisine match

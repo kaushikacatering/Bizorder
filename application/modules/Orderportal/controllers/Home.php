@@ -467,29 +467,9 @@ class Home extends MY_Controller {
         $savedMenuWithOptions = unserialize($savedData[0]['menuWithOptions']);
         $selectedDepartments = $savedData[0]['department_id']; 
       } else {
-        // If no menu planner exists, create default structure with all available menus
+        // No published menu planner exists for this date
         $savedMenuWithoutOptions = [];
         $savedMenuWithOptions = [];
-        
-        // For reception, show all available menus organized by category
-        if($isReception) {
-            foreach($data['categoryListData'] as $category) {
-                $categoryMenus = array_filter($data['menuLists'], function($menu) use ($category) {
-                    return in_array($category['id'], $menu['category_ids']);
-                });
-                
-                foreach($categoryMenus as $menu) {
-                    if(!empty($menu['menu_options'])) {
-                        // Menu with options - add all options
-                        $optionIds = array_column($menu['menu_options'], 'option_id');
-                        $savedMenuWithOptions[$category['id']][$menu['menu_id']] = $optionIds;
-                    } else {
-                        // Menu without options
-                        $savedMenuWithoutOptions[$category['id']][] = $menu['menu_id'];
-                    }
-                }
-            }
-        }
       }
       
     //   $savedMenuWithOptions[5][83] = ['529','530','531'];
