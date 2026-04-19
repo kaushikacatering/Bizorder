@@ -2911,7 +2911,7 @@
                                     // Calculate allergy filtering for warning display
                                     const bed = bedLists.find(b => b.id == bedId);
                                     // Only show options that are in the published menu planner (+ dietary variations)
-                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));
+                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)));
                                     let safeOptionsCount = allOptionsInPlan.length;
                                     let allergyWarning = '';
                                     
@@ -2961,7 +2961,7 @@
                                             </h3>
                                             ${allergyWarning}
                                             <div data-is_main_menu="${menu.is_main_menu}" data-singleSelect="${menu.is_single_select}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 menu-options-grid" data-group="${category.id}_${menu.menu_id}" data-max="${menu.inputType === 'radio' ? 1 : 2}">
-                                                ${menu.menu_options.filter(option => menuPlannerOptions.includes(String(option.option_id)) || _optionHasCuisine(option))
+                                                ${menu.menu_options.filter(option => menuPlannerOptions.includes(String(option.option_id)))
                                                     .filter(option => {
                                                         const bed = bedLists.find(b => b.id == bedId);
                                                         if (!bed) return true;
@@ -3177,7 +3177,7 @@ ${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0) ? `<span cla
                                     // Fallback: menu is in planner but wasn't caught by first path
                                     const menuPlannerOptions = savedWithOptions[category.id]?.[menu.menu_id] || [];
                                     // Only show options that are in the published menu planner (+ dietary variations)
-                                    const optionsToShow = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));
+                                    const optionsToShow = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)));
                                     
                                     const bed = bedLists.find(b => b.id == bedId);
                                     // Apply allergy/cuisine filtering

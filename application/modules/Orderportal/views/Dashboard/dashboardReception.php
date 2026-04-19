@@ -2521,7 +2521,7 @@
                                     })));
                                     // Calculate allergy filtering for warning display
                                     const bed = bedLists.find(b => b.id == bedId);
-                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));
+                                    const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)));
                                     let safeOptionsCount = allOptionsInPlan.length;
                                     let allergyWarning = '';
                                     
@@ -2572,7 +2572,7 @@
                                             ${allergyWarning}
                                             <div data-is_main_menu="${menu.is_main_menu}" data-singleSelect="${menu.is_single_select}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 menu-options-grid" data-group="${category.id}_${menu.menu_id}" data-max="${menu.inputType === 'radio' ? 1 : 2}">
                                                 ${menu.menu_options
-                                                    .filter(option => menuPlannerOptions.includes(String(option.option_id)) || _optionHasCuisine(option))
+                                                    .filter(option => menuPlannerOptions.includes(String(option.option_id)))
                                                     .filter(option => {
                                                         const bed = bedLists.find(b => b.id == bedId);
                                                         if (!bed) return true;
