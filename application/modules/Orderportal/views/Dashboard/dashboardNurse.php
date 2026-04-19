@@ -2935,12 +2935,12 @@
                                                 }).length;
                                                 
                                                 const hiddenCount = allOptionsInPlan.length - safeOptionsCount;
-                                                if (false) { // Allergy count hidden by design
+                                                if (hiddenCount > 0) {
                                                     allergyWarning = `
                                                         <div class="mb-3 p-3 bg-amber-50 border-l-4 border-amber-400 rounded flex items-start">
                                                             <i class="fas fa-exclamation-triangle text-amber-600 mt-0.5 mr-2"></i>
                                                             <div class="text-sm text-amber-800">
-                                                                <strong>Allergy Alert:</strong> ${hiddenCount} item${hiddenCount > 1 ? 's' : ''} hidden due to patient allergies
+                                                                <strong>Allergy Alert:</strong> Some items hidden due to patient allergies
                                                             </div>
                                                         </div>
                                                     `;
