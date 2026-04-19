@@ -2545,7 +2545,7 @@
                                                 }).length;
                                                 
                                                 const hiddenCount = allOptionsInPlan.length - safeOptionsCount;
-                                                if (hiddenCount > 0) {
+                                                if (false) { // Allergy count hidden by design
                                                     allergyWarning = `
                                                         <div class="mb-3 p-3 bg-amber-50 border-l-4 border-amber-400 rounded flex items-start">
                                                             <i class="fas fa-exclamation-triangle text-amber-600 mt-0.5 mr-2"></i>
@@ -2724,7 +2724,7 @@
         <i class="fas fa-info-circle text-lg"></i>
     </button>
 ` : ''}
-${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0) ? `<span class="inline-flex flex-wrap gap-1 ml-1">${getCuisineNamesByIds(option._mergedCuisineIds).map(name => `<span class="text-xs font-medium text-green-700">${htmlspecialchars(name)}</span>`).join('<span class="text-xs text-gray-400">,</span>')}</span>` : ''}
+${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0 && !(menu.is_common_item == 1 || menu.is_common_item === '1')) ? `<span class="inline-flex flex-wrap gap-1 ml-1">${getCuisineNamesByIds(option._mergedCuisineIds).map(name => `<span class="text-xs font-medium text-green-700">${htmlspecialchars(name)}</span>`).join('<span class="text-xs text-gray-400">,</span>')}</span>` : ''}
                                                             <button type="button" 
                                                                     class="ml-2 text-gray-400 hover:text-orange-600 transition-colors comment-btn p-2 rounded-full hover:bg-gray-100"
                                                                     data-bed-id="${bedId}"
