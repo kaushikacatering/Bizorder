@@ -2436,11 +2436,20 @@
                 categoryList.forEach(category => {
                     
                     // First check if there are saved menus for this category
-                    let categoryMenus = menuList.filter(m => 
-                        m.category_ids && m.category_ids.includes(category.id) && 
-                        ((savedWithoutOptions[category.id] || []).includes(m.menu_id) || 
-                         (savedWithOptions[category.id]?.[m.menu_id] || []).length > 0)
-                    );
+                    console.log('=== DEBUG CATEGORY ===', category.id, category.name);
+                    console.log('savedWithOptions keys:', Object.keys(savedWithOptions));
+                    console.log('savedWithOptions[category.id]:', savedWithOptions[category.id]);
+                    console.log('savedWithoutOptions[category.id]:', savedWithoutOptions[category.id]);
+                    
+                    let categoryMenus = menuList.filter(m => {
+                        const inCategory = m.category_ids && m.category_ids.includes(category.id);
+                        const inSavedWithout = ((savedWithoutOptions[category.id] || []).includes(m.menu_id));
+                        const inSavedWith = ((savedWithOptions[category.id]?.[m.menu_id] || []).length > 0);
+                        console.log('Menu:', m.menu_name, 'menu_id:', m.menu_id, 'category_ids:', m.category_ids, 
+                            'inCategory:', inCategory, 'inSavedWithout:', inSavedWithout, 'inSavedWith:', inSavedWith,
+                            'savedWithOptions for this menu:', savedWithOptions[category.id]?.[m.menu_id]);
+                        return inCategory && (inSavedWithout || inSavedWith);
+                    });
 
                     // VARIATION FILTERING: Apply cuisine exact-match + allergen filtering for ALL patients
                     // - Patient with preferences: show only menus with exact cuisine match
@@ -2503,7 +2512,13 @@
 
                                 if (menu.menu_options && menu.menu_options.length > 0 && savedWithOptions[category.id]?.[menu.menu_id]) {
                                     const menuPlannerOptions = savedWithOptions[category.id][menu.menu_id] || [];
-                                    
+                                    console.log('=== DEBUG OPTIONS ===', menu.menu_name, 'menuPlannerOptions:', menuPlannerOptions);
+                                    console.log('All option_ids:', menu.menu_options.map(o => ({id: o.option_id, name: o.menu_option_name, type: typeof o.option_id})));
+                                    console.log('Filter check:', menu.menu_options.map(o => ({
+                                        name: o.menu_option_name,
+                                        inPlanner: menuPlannerOptions.includes(String(o.option_id)),
+                                        hasCuisine: _optionHasCuisine(o)
+                                    })));
                                     // Calculate allergy filtering for warning display
                                     const bed = bedLists.find(b => b.id == bedId);
                                     const allOptionsInPlan = menu.menu_options.filter(opt => menuPlannerOptions.includes(String(opt.option_id)) || _optionHasCuisine(opt));

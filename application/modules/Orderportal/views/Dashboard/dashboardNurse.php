@@ -2900,6 +2900,13 @@
 
                                 if (menu.menu_options && menu.menu_options.length > 0 && savedWithOptions[category.id]?.[menu.menu_id]) {
                                     const menuPlannerOptions = savedWithOptions[category.id]?.[menu.menu_id] || [];
+                                    console.log('=== DEBUG OPTIONS ===', menu.menu_name, 'menuPlannerOptions:', menuPlannerOptions);
+                                    console.log('All option_ids:', menu.menu_options.map(o => ({id: o.option_id, name: o.menu_option_name, type: typeof o.option_id})));
+                                    console.log('Filter check:', menu.menu_options.map(o => ({
+                                        name: o.menu_option_name,
+                                        inPlanner: menuPlannerOptions.includes(String(o.option_id)),
+                                        hasCuisine: _optionHasCuisine(o)
+                                    })));
                                     
                                     // Calculate allergy filtering for warning display
                                     const bed = bedLists.find(b => b.id == bedId);
