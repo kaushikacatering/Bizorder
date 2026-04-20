@@ -412,10 +412,9 @@
                                                     </span>
                                                     <?php
                                                     // Display cuisine type badges for variation clarity
-                                                    $isCommonItem = isset($item['is_common_item']) && $item['is_common_item'] == 1;
                                                     $rawCuisine = $item['cuisineValues'] ?? '[]';
                                                     $cuisineIds = is_string($rawCuisine) ? json_decode($rawCuisine, true) : (is_array($rawCuisine) ? $rawCuisine : []);
-                                                    if (!empty($cuisineIds) && !$isCommonItem):
+                                                    if (!empty($cuisineIds)):
                                                         foreach ($cuisineIds as $cid):
                                                             $shortCode = $cuisineShortCodeMap[$cid] ?? '';
                                                             $fullName = $cuisineMap[$cid] ?? '';

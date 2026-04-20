@@ -363,24 +363,6 @@ class Menuplanner extends MY_Controller {
     $isWeeklyMenuPlanner = $this->input->post('isWeeklyMenuPlanner') ?? ''; 
     $saveType = $this->input->post('saveTypeBtn'); // 1 for save, 2 for publish
     
-    // Capture old menu planner option IDs BEFORE any update (for order cleanup)
-    $oldOptionIds = [];
-    $oldPlannerData = $this->common_model->fetchRecordsDynamically('menuPlanner', ['menuWithOptions'], ['date' => $date, 'department_id' => $deptId, 'status !=' => 0]);
-    if (!empty($oldPlannerData) && !empty($oldPlannerData[0]['menuWithOptions'])) {
-        $oldMenuWithOptions = @unserialize($oldPlannerData[0]['menuWithOptions']);
-        if (is_array($oldMenuWithOptions)) {
-            foreach ($oldMenuWithOptions as $catId => $menus) {
-                if (is_array($menus)) {
-                    foreach ($menus as $menuId => $optIds) {
-                        if (is_array($optIds)) {
-                            $oldOptionIds = array_merge($oldOptionIds, array_map('strval', $optIds));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
     // CRITICAL FIX: Validate saveType
     if (empty($saveType) || !in_array($saveType, [1, 2])) {
         log_message('error', "MENU PLANNER SAVE FAILED: Invalid saveType: {$saveType}. User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " User ID=" . ($this->session->userdata('user_id') ?: 'UNKNOWN') . " IP=" . $this->input->ip_address() . " at " . australia_datetime());
@@ -803,71 +785,6 @@ class Menuplanner extends MY_Controller {
                     }
                 }
             }
-            
-            // ═══════════════════════════════════════════════════════════════════════
-            // ORDER CLEANUP: Cancel ordered items that are no longer in the menu planner
-            // When admin removes an option from the planner, soft-cancel matching orders
-            // This ensures production form, view details, and labels stay in sync
-            // ═══════════════════════════════════════════════════════════════════════
-            $newOptionIds = [];
-            if (is_array($optionMenus)) {
-                foreach ($optionMenus as $catId => $menus) {
-                    if (is_array($menus)) {
-                        foreach ($menus as $menuId => $optIds) {
-                            if (is_array($optIds)) {
-                                $newOptionIds = array_merge($newOptionIds, array_map('strval', $optIds));
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Find option IDs that were in the old planner but NOT in the new one
-            $removedOptionIds = array_diff($oldOptionIds, $newOptionIds);
-            
-            if (!empty($removedOptionIds)) {
-                // Find orders for this date that contain the removed options
-                $this->tenantDb->select('o.order_id');
-                $this->tenantDb->from('orders o');
-                $this->tenantDb->where('o.date', $date);
-                $this->tenantDb->where('o.buttonType', 'sendorder');
-                $this->tenantDb->where('o.status !=', 0);
-                $ordersForDate = $this->tenantDb->get()->result_array();
-                
-                if (!empty($ordersForDate)) {
-                    $orderIds = array_column($ordersForDate, 'order_id');
-                    
-                    // Find active (non-cancelled) order items with the removed option IDs
-                    $this->tenantDb->select('id');
-                    $this->tenantDb->from('orders_to_patient_options');
-                    $this->tenantDb->where_in('order_id', $orderIds);
-                    $this->tenantDb->where_in('option_id', array_values($removedOptionIds));
-                    $this->tenantDb->group_start();
-                    $this->tenantDb->where('is_cancelled', 0);
-                    $this->tenantDb->or_where('is_cancelled IS NULL');
-                    $this->tenantDb->group_end();
-                    $itemsToCancel = $this->tenantDb->get()->result_array();
-                    
-                    if (!empty($itemsToCancel)) {
-                        $itemIds = array_column($itemsToCancel, 'id');
-                        
-                        // Soft cancel - consistent with existing discharge/transfer pattern
-                        $cancelData = [
-                            'is_cancelled' => 1,
-                            'cancel_reason' => 'Menu item removed from planner',
-                            'cancelled_at' => date('Y-m-d H:i:s'),
-                            'cancelled_by' => $this->session->userdata('user_id') ?: null,
-                        ];
-                        
-                        $this->tenantDb->where_in('id', $itemIds);
-                        $this->tenantDb->update('orders_to_patient_options', $cancelData);
-                        $cancelledCount = $this->tenantDb->affected_rows();
-                        
-                        log_message('info', "MENU PLANNER ORDER CLEANUP: Soft-cancelled {$cancelledCount} ordered item(s) for date={$date}. Removed option IDs: " . json_encode(array_values($removedOptionIds)) . ". Cancelled item IDs: " . json_encode($itemIds) . ". User=" . ($this->session->userdata('username') ?: 'UNKNOWN') . " at " . australia_datetime());
-                    }
-                }
-            }
-            // ═══════════════════════════════════════════════════════════════════════
             
             // Return success response
             if($this->input->is_ajax_request()) {
