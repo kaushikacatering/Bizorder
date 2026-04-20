@@ -2685,11 +2685,7 @@
                                                         // Convert all selected IDs to strings for type-safe comparison
                                                         const selectedIds = selectedForMenu.map(id => String(id));
                                                         const isChecked = (option._allOptionIds || [optionId]).some(id => selectedIds.includes(id)) ? 'checked' : '';
-                                                        // Hidden inputs for all variation option_ids sharing this name
-                                                        const siblingIds = (option._allOptionIds || [optionId]).filter(id => id !== optionId);
-                                                        const siblingInputs = siblingIds.map(sid => 
-                                                            `<input type="hidden" name="${inputName}" value="${sid}" class="sibling-option" data-parent="option_${bedId}_${category.id}_${menu.menu_id}_${optionId}" disabled>`
-                                                        ).join('');
+
                                                         return `
                                                             <div class="relative">
                                                                 <input type="${menu.inputType}" 
@@ -2700,7 +2696,6 @@
                                                                        class="peer absolute inset-0 opacity-0 menu-option-checkbox" 
                                                                        ${isChecked} ${disabled} 
                                                                        aria-label="${htmlspecialchars(option.menu_option_name)}">
-                                                                ${siblingInputs}
                                                                 <div class="p-2 border border-gray-200 rounded-lg hover:border-blue-300 ${isChecked ? 'bg-blue-100 border-blue-500' : ''} transition-all cursor-pointer ${disabledClass}">
                                                                     <div class="flex items-center justify-between">
                                                                         <div class="flex items-center space-x-1.5">
@@ -2796,10 +2791,7 @@ ${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0 && !(menu.is_
                     setupChoiceCounters();
                     // Also update all counters to ensure they show correct initial values
                     updateChoiceCounters();
-                    // Enable sibling hidden inputs for already-checked options
-                    document.querySelectorAll('.menu-option-checkbox:checked').forEach(cb => {
-                        document.querySelectorAll(`.sibling-option[data-parent="${cb.id}"]`).forEach(s => s.disabled = false);
-                    });
+
                 }, 100);
 
                 // Add event listeners for view-more links
@@ -3178,11 +3170,7 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
                     // Update visual state for current input
                     updateVisualState(input, input.checked);
                     
-                    // Enable/disable sibling hidden inputs for grouped variations
-                    const inputId = input.id;
-                    document.querySelectorAll(`.sibling-option[data-parent="${inputId}"]`).forEach(s => {
-                        s.disabled = !input.checked;
-                    });
+
                     
                     // Update counters and calories
                     updateChoiceCounters();
