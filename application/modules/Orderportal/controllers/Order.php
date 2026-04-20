@@ -2427,6 +2427,7 @@ class Order extends MY_Controller
                 'menu_option_name' => $row['menu_option_name'],
                 'menu_colour' => $row['menu_color'],
                 'cuisineValues' => $row['cuisineValues'] ?? '[]',
+                'is_common_item' => $row['is_common_item'] ?? 0,
                 'subcategory_name' => $subcategoryName,
                 'qty'              => (int)$row['total_qty'], // Pending quantity
                 'completed_qty'    => (int)$row['completed_qty'], // Completed quantity
