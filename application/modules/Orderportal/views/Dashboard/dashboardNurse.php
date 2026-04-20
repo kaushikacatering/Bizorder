@@ -3409,7 +3409,13 @@ function handleCardClicks(e) {
     if (!container) return;
 
     const input = container.querySelector('.menu-option-checkbox, input[type="radio"]');
-    if (!input || input.disabled) return;
+    if (!input) return;
+    // Allow unchecking already-checked items even if disabled (for fixing duplicate selections)
+    if (input.disabled && !input.checked) return;
+    if (input.disabled && input.checked) {
+        input.disabled = false;
+        input.removeAttribute('disabled');
+    }
 
     // Toggle
     input.checked = !input.checked;
@@ -3430,8 +3436,10 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
      if (isMainMenuSelected) {
 
         allRestricted.forEach(cb => {
-            cb.disabled = true;
-            cb.setAttribute('disabled', 'disabled');
+            if (!cb.checked) {
+                cb.disabled = true;
+                cb.setAttribute('disabled', 'disabled');
+            }
         });
 
     } else{
@@ -3644,8 +3652,10 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
      if (isMainMenuSelected) {
 
         allRestricted.forEach(cb => {
-            cb.disabled = true;
-            cb.setAttribute('disabled', 'disabled');
+            if (!cb.checked) {
+                cb.disabled = true;
+                cb.setAttribute('disabled', 'disabled');
+            }
         });
 
     } else{

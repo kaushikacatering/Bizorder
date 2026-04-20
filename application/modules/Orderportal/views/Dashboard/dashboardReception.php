@@ -2893,7 +2893,13 @@ ${(option._mergedCuisineIds && option._mergedCuisineIds.length > 0 && !(menu.is_
 
     const input = container.querySelector('.menu-option-checkbox');
 
-    if (!input || input.disabled) return;
+    if (!input) return;
+    // Allow unchecking already-checked items even if disabled (for fixing duplicate selections)
+    if (input.disabled && !input.checked) return;
+    if (input.disabled && input.checked) {
+        input.disabled = false;
+        input.removeAttribute('disabled');
+    }
 
     // Toggle checkbox
     input.checked = !input.checked;
@@ -2914,8 +2920,10 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
      if (isMainMenuSelected) {
 
         allRestricted.forEach(cb => {
-            cb.disabled = true;
-            cb.setAttribute('disabled', 'disabled');
+            if (!cb.checked) {
+                cb.disabled = true;
+                cb.setAttribute('disabled', 'disabled');
+            }
         });
 
     } else{
@@ -3115,8 +3123,10 @@ const checkedRestricted = Array.from(allRestricted).filter(cb => cb.checked);
      if (isMainMenuSelected) {
 
         allRestricted.forEach(cb => {
-            cb.disabled = true;
-            cb.setAttribute('disabled', 'disabled');
+            if (!cb.checked) {
+                cb.disabled = true;
+                cb.setAttribute('disabled', 'disabled');
+            }
         });
 
     } else{
