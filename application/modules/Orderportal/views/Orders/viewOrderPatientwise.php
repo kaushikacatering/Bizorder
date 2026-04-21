@@ -1017,9 +1017,10 @@ span:not(.badge):not(.text-muted) {
                                                     <div class="option-info">
                                                         <span class="option-name fw-bold text-dark"><?php echo htmlspecialchars($menuOption['menu_option_name']); ?></span>
                                                         <?php
-                                                        // Display cuisine/diet type badges from ALL matching variations
+                                                        // Display cuisine/diet type badges from ALL matching variations (skip for common items)
+                                                        $isCommonItem = isset($menu['is_common_item']) && $menu['is_common_item'] == 1;
                                                         $mergedCuisineIds = $menuOption['_mergedCuisineIds'] ?? [];
-                                                        if (!empty($mergedCuisineIds) && !empty($cuisineMap)) {
+                                                        if (!$isCommonItem && !empty($mergedCuisineIds) && !empty($cuisineMap)) {
                                                                 foreach ($mergedCuisineIds as $cid) {
                                                                     if (isset($cuisineShortCodeMap[$cid])) {
                                                                         echo ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.7rem;padding:2px 7px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
