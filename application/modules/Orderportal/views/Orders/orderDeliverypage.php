@@ -639,18 +639,21 @@ foreach ($filtered_options as $item) {
 }
 $unique_options = array_values($unique_options);
 
-$option_html = array_map(function ($item) use ($cuisineMap, $cuisineShortCodeMap) {
+$isCommonItem = isset($menu['is_common_item']) && $menu['is_common_item'] == 1;
+$option_html = array_map(function ($item) use ($cuisineMap, $cuisineShortCodeMap, $isCommonItem) {
     $color = !empty($item['menu_color']) ? htmlspecialchars($item['menu_color']) : '';
     $name  = htmlspecialchars($item['menu_option_name']);
 
-    // Build cuisine/diet badges from merged cuisine IDs across all variations
+    // Build cuisine/diet badges from merged cuisine IDs across all variations (skip for common items)
     $badges = '';
-    $cIds = !empty($item['_mergedCuisineIds']) ? $item['_mergedCuisineIds'] : [];
-    foreach ($cIds as $cid) {
-        if (isset($cuisineShortCodeMap[$cid])) {
-            $badges .= ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
-        } elseif (isset($cuisineMap[$cid])) {
-            $badges .= ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
+    if (!$isCommonItem) {
+        $cIds = !empty($item['_mergedCuisineIds']) ? $item['_mergedCuisineIds'] : [];
+        foreach ($cIds as $cid) {
+            if (isset($cuisineShortCodeMap[$cid])) {
+                $badges .= ' <span class="badge rounded-pill" style="background-color:#7c3aed !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;" title="' . htmlspecialchars($cuisineMap[$cid] ?? '') . '">' . htmlspecialchars($cuisineShortCodeMap[$cid]) . '</span>';
+            } elseif (isset($cuisineMap[$cid])) {
+                $badges .= ' <span class="badge rounded-pill" style="background-color:#3b82f6 !important;color:#ffffff !important;font-size:0.65rem;padding:1px 6px;">' . htmlspecialchars($cuisineMap[$cid]) . '</span>';
+            }
         }
     }
 
