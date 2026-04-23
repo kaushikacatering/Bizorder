@@ -644,14 +644,45 @@ return $query->result_array();
     }
 
     /**
-     * Inject new option_ids into all future (and today's) menu planners that already contain this menu_id.
-     * Called when a new variation is added to a menu item so the planner stays in sync.
+     * Inject new option_ids into all future (and today's) menu planners that already contain this menu_id,
+     * but ONLY if the new option is a dietary variation of an option already in the planner
+     * (i.e., another option with the same menu_option_name is already present).
+     * Brand new food items added to a menu will NOT be auto-injected.
      *
      * @param int   $menu_detail_id  The menu (menuDetails) ID
      * @param array $new_option_ids  Array of new option_id(s) to inject
      */
     public function syncNewOptionsToFuturePlanners($menu_detail_id, array $new_option_ids) {
         if (empty($menu_detail_id) || empty($new_option_ids)) return;
+
+        // For each new option, find its menu_option_name and sibling option_ids (same name, same menu)
+        $newOptionSiblings = []; // new_option_id => [sibling_option_ids]
+        foreach ($new_option_ids as $newOptId) {
+            $opt = $this->tenantDb->select('menu_option_name')->from('menu_options')->where('id', $newOptId)->get()->row();
+            if (!$opt || empty($opt->menu_option_name)) continue;
+
+            // Find all OTHER option_ids with the same name under this menu
+            $siblings = $this->tenantDb
+                ->select('mo.id')
+                ->from('menu_options mo')
+                ->join('menu_details_to_menu_options mdto', 'mdto.menu_option_id = mo.id')
+                ->where('mdto.main_menu_id', $menu_detail_id)
+                ->where('mo.menu_option_name', $opt->menu_option_name)
+                ->where('mo.id !=', $newOptId)
+                ->where('mo.is_deleted', 0)
+                ->get()
+                ->result_array();
+
+            $siblingIds = array_map(function($r) { return (string)$r['id']; }, $siblings);
+            $newOptionSiblings[(string)$newOptId] = $siblingIds;
+        }
+
+        // If no new options have siblings, nothing to inject (they're all brand new items)
+        $hasAnySiblings = false;
+        foreach ($newOptionSiblings as $sibs) {
+            if (!empty($sibs)) { $hasAnySiblings = true; break; }
+        }
+        if (!$hasAnySiblings) return;
 
         $today = date('Y-m-d');
         // Fetch all planners for today and future dates
@@ -682,8 +713,21 @@ return $query->result_array();
                 $existingOptionIds = is_array($menus[$actualKey]) ? array_map('strval', $menus[$actualKey]) : [];
 
                 foreach ($new_option_ids as $newId) {
-                    if (!in_array((string)$newId, $existingOptionIds)) {
-                        $menus[$actualKey][] = (string)$newId;
+                    $newIdStr = (string)$newId;
+                    if (in_array($newIdStr, $existingOptionIds)) continue; // already present
+
+                    // Only inject if a sibling option (same name) is already in the planner
+                    $siblings = $newOptionSiblings[$newIdStr] ?? [];
+                    $siblingInPlanner = false;
+                    foreach ($siblings as $sibId) {
+                        if (in_array($sibId, $existingOptionIds)) {
+                            $siblingInPlanner = true;
+                            break;
+                        }
+                    }
+
+                    if ($siblingInPlanner) {
+                        $menus[$actualKey][] = $newIdStr;
                         $changed = true;
                     }
                 }
@@ -695,7 +739,7 @@ return $query->result_array();
                 $this->tenantDb->update('menuPlanner', [
                     'menuWithOptions' => serialize($menuWithOptions)
                 ]);
-                log_message('info', "MENU PLANNER AUTO-SYNC: Injected option IDs [" . implode(',', $new_option_ids) . "] for menu_id={$menu_detail_id} into planner ID={$planner['id']} (date={$planner['date']})");
+                log_message('info', "MENU PLANNER AUTO-SYNC: Injected variation option IDs for menu_id={$menu_detail_id} into planner ID={$planner['id']} (date={$planner['date']})");
             }
         }
     }
