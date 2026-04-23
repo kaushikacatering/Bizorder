@@ -767,6 +767,12 @@ class Configfoodmenu extends MY_Controller
         if ($result) {
             // Always ensure the link exists (fixes orphaned/N/A menu options)
             $this->menu_model->add_menu_option_link($menu_detail_id, $result);
+
+            // AUTO-SYNC: If this is a NEW variation (no $id), inject into future menu planners
+            if (empty($id)) {
+                $this->menu_model->syncNewOptionsToFuturePlanners($menu_detail_id, [$result]);
+            }
+
             $variation = $this->menu_model->get_variation($result);
             echo json_encode(['success' => true, 'message' => 'Option saved.', 'variation' => $variation]);
         } else {
@@ -798,6 +804,7 @@ class Configfoodmenu extends MY_Controller
         }
 
         $saved_ids = [];
+        $new_option_ids = [];
         $existing_ids = [];
 
         // Collect existing linked option IDs first
@@ -826,9 +833,18 @@ class Configfoodmenu extends MY_Controller
 
             if ($result) {
                 $saved_ids[] = (int)$result;
+                // Track truly new options (not updates)
+                if (empty($vid)) {
+                    $new_option_ids[] = (int)$result;
+                }
                 // Always ensure the link exists (fixes orphaned/N/A menu options)
                 $this->menu_model->add_menu_option_link($menu_detail_id, $result);
             }
+        }
+
+        // AUTO-SYNC: Inject any newly created options into future menu planners
+        if (!empty($new_option_ids)) {
+            $this->menu_model->syncNewOptionsToFuturePlanners($menu_detail_id, $new_option_ids);
         }
 
         echo json_encode(['success' => true, 'message' => 'All options saved successfully.', 'saved_count' => count($saved_ids)]);
@@ -851,9 +867,11 @@ class Configfoodmenu extends MY_Controller
 
         $result = $this->menu_model->delete_variation($id);
 
-        // Also remove the link
+        // Also remove the link and sync planners
         if ($result && !empty($menu_detail_id)) {
             $this->menu_model->remove_menu_option_link($menu_detail_id, $id);
+            // AUTO-SYNC: Remove deleted option from future menu planners
+            $this->menu_model->removeOptionsFromFuturePlanners($menu_detail_id, [$id]);
         }
 
         echo json_encode(['success' => $result, 'message' => $result ? 'Option deleted.' : 'Failed to delete.']);
@@ -876,7 +894,16 @@ class Configfoodmenu extends MY_Controller
         }
 
         if ($menu_detail_id > 0) {
+            // Collect option IDs before deleting so we can remove them from planners
+            $variations = $this->menu_model->get_variations_by_menu($menu_detail_id, $option_name);
+            $option_ids_to_remove = array_column($variations, 'id');
+
             $result = $this->menu_model->delete_variations_by_option_name($menu_detail_id, $option_name);
+
+            // AUTO-SYNC: Remove deleted options from future menu planners
+            if ($result && !empty($option_ids_to_remove)) {
+                $this->menu_model->removeOptionsFromFuturePlanners($menu_detail_id, $option_ids_to_remove);
+            }
         } else {
             // Unlinked options: delete by option name where no link exists
             $result = $this->menu_model->delete_unlinked_by_option_name($option_name);

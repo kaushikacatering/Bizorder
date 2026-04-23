@@ -643,4 +643,111 @@ return $query->result_array();
         return $results;
     }
 
+    /**
+     * Inject new option_ids into all future (and today's) menu planners that already contain this menu_id.
+     * Called when a new variation is added to a menu item so the planner stays in sync.
+     *
+     * @param int   $menu_detail_id  The menu (menuDetails) ID
+     * @param array $new_option_ids  Array of new option_id(s) to inject
+     */
+    public function syncNewOptionsToFuturePlanners($menu_detail_id, array $new_option_ids) {
+        if (empty($menu_detail_id) || empty($new_option_ids)) return;
+
+        $today = date('Y-m-d');
+        // Fetch all planners for today and future dates
+        $planners = $this->tenantDb
+            ->select('id, menuWithOptions, date')
+            ->from('menuPlanner')
+            ->where('date >=', $today)
+            ->where('status !=', 0)
+            ->get()
+            ->result_array();
+
+        foreach ($planners as $planner) {
+            if (empty($planner['menuWithOptions'])) continue;
+
+            $menuWithOptions = @unserialize($planner['menuWithOptions']);
+            if (!is_array($menuWithOptions)) continue;
+
+            $changed = false;
+            // Walk through each category in the planner
+            foreach ($menuWithOptions as $catId => &$menus) {
+                if (!is_array($menus)) continue;
+                // Check if this menu_detail_id exists in this category
+                $menuKey = (string)$menu_detail_id;
+                if (!isset($menus[$menuKey]) && !isset($menus[(int)$menu_detail_id])) continue;
+
+                // Get the right key (could be string or int)
+                $actualKey = isset($menus[$menuKey]) ? $menuKey : (int)$menu_detail_id;
+                $existingOptionIds = is_array($menus[$actualKey]) ? array_map('strval', $menus[$actualKey]) : [];
+
+                foreach ($new_option_ids as $newId) {
+                    if (!in_array((string)$newId, $existingOptionIds)) {
+                        $menus[$actualKey][] = (string)$newId;
+                        $changed = true;
+                    }
+                }
+            }
+            unset($menus);
+
+            if ($changed) {
+                $this->tenantDb->where('id', $planner['id']);
+                $this->tenantDb->update('menuPlanner', [
+                    'menuWithOptions' => serialize($menuWithOptions)
+                ]);
+                log_message('info', "MENU PLANNER AUTO-SYNC: Injected option IDs [" . implode(',', $new_option_ids) . "] for menu_id={$menu_detail_id} into planner ID={$planner['id']} (date={$planner['date']})");
+            }
+        }
+    }
+
+    /**
+     * Remove option_ids from all future (and today's) menu planners when a variation is deleted.
+     *
+     * @param int   $menu_detail_id    The menu (menuDetails) ID
+     * @param array $removed_option_ids Array of option_id(s) to remove
+     */
+    public function removeOptionsFromFuturePlanners($menu_detail_id, array $removed_option_ids) {
+        if (empty($menu_detail_id) || empty($removed_option_ids)) return;
+
+        $today = date('Y-m-d');
+        $planners = $this->tenantDb
+            ->select('id, menuWithOptions, date')
+            ->from('menuPlanner')
+            ->where('date >=', $today)
+            ->where('status !=', 0)
+            ->get()
+            ->result_array();
+
+        foreach ($planners as $planner) {
+            if (empty($planner['menuWithOptions'])) continue;
+
+            $menuWithOptions = @unserialize($planner['menuWithOptions']);
+            if (!is_array($menuWithOptions)) continue;
+
+            $changed = false;
+            foreach ($menuWithOptions as $catId => &$menus) {
+                if (!is_array($menus)) continue;
+                $menuKey = (string)$menu_detail_id;
+                $actualKey = isset($menus[$menuKey]) ? $menuKey : (isset($menus[(int)$menu_detail_id]) ? (int)$menu_detail_id : null);
+                if ($actualKey === null || !is_array($menus[$actualKey])) continue;
+
+                $before = count($menus[$actualKey]);
+                $menus[$actualKey] = array_values(array_filter($menus[$actualKey], function($oid) use ($removed_option_ids) {
+                    return !in_array((string)$oid, array_map('strval', $removed_option_ids));
+                }));
+                if (count($menus[$actualKey]) !== $before) {
+                    $changed = true;
+                }
+            }
+            unset($menus);
+
+            if ($changed) {
+                $this->tenantDb->where('id', $planner['id']);
+                $this->tenantDb->update('menuPlanner', [
+                    'menuWithOptions' => serialize($menuWithOptions)
+                ]);
+                log_message('info', "MENU PLANNER AUTO-SYNC: Removed option IDs [" . implode(',', $removed_option_ids) . "] for menu_id={$menu_detail_id} from planner ID={$planner['id']} (date={$planner['date']})");
+            }
+        }
+    }
 }
