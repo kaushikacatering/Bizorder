@@ -65,6 +65,10 @@ class Patient extends MY_Controller
     $conditionsB['status'] = '1';
     $conditionsB['is_deleted'] = '0';      // Exclude deleted suites
     $data['suites'] = $this->common_model->fetchRecordsDynamically('suites',['bed_no','id'],$conditionsB);
+    
+    $conditionsCuisine['listtype'] = 'cuisine';
+    $conditionsCuisine['is_deleted'] = '0';
+    $data['cuisines'] = $this->common_model->fetchRecordsDynamically('foodmenuconfig',['id','name'],$conditionsCuisine);
     // echo "<pre>"; print_r($data['customerLists']);exit;
     
     $this->load->view('general/landingPageHeader');

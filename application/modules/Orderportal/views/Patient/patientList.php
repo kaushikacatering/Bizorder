@@ -41,6 +41,7 @@
             <th class="sort" data-sort="name">Name</th>
             <th class="sort" data-sort="floor">Floor Name</th>
             <th class="sort" data-sort="suite">Suite No</th>
+            <th class="sort" data-sort="dietary">Dietary Preference</th>
             <th class="sort" data-sort="allergens">Dietary Restrictions</th>
             <th class="sort" data-sort="instructions">Special Instructions</th>
             <th class="no-sort">Date Onboarded</th>
@@ -65,6 +66,22 @@
                         });
                         $suite = array_values($suite_number);
 
+                        // Decode dietary preferences
+                        $selected_diets = [];
+                        if (!empty($customer['dietary_preferences'])) {
+                            $selected_diets = is_array(json_decode($customer['dietary_preferences'], true)) 
+                                ? json_decode($customer['dietary_preferences'], true) 
+                                : [];
+                        }
+                        $dietNames = [];
+                        if (!empty($cuisines)) {
+                            foreach ($cuisines as $cuisine) {
+                                if (in_array($cuisine['id'], $selected_diets)) {
+                                    $dietNames[] = $cuisine['name'];
+                                }
+                            }
+                        }
+
                         // Decode allergies (support JSON or CSV)
                         $selected_allergies = [];
                         if (!empty($customer['allergies'])) {
@@ -84,6 +101,15 @@
                     <td data-sort="<?php echo strtolower($customer['name']); ?>"><?php echo $customer['name']; ?></td>
                     <td data-sort="<?php echo strtolower($floorNameDisplay); ?>"><?php echo $floorNameDisplay; ?></td>
                     <td data-sort="<?php echo strtolower($suite[0]['bed_no'] ?? ''); ?>"><?php echo $suite[0]['bed_no'] ?? ''; ?></td>
+                    <td data-sort="<?php echo strtolower(implode(', ', $dietNames)); ?>">
+                        <?php if (!empty($dietNames)): ?>
+                            <span class="badge bg-info">
+                                <?= implode('</span> <span class="badge bg-info">', $dietNames); ?>
+                            </span>
+                        <?php else: ?>
+                            <span class="text-muted">None</span>
+                        <?php endif; ?>
+                    </td>
                     <td data-sort="<?php echo strtolower(implode(', ', $allergyNames)); ?>">
                         <?php if (!empty($allergyNames)): ?>
                             <span class="badge bg-secondary">
@@ -141,6 +167,7 @@
                                                         <th class="sort" data-sort="name">Name</th>
                                                         <th class="sort" data-sort="floor">Floor Name</th>
                                                         <th class="sort" data-sort="suite">Suite No</th>
+                                                        <th class="sort" data-sort="dietary">Dietary Preference</th>
                                                         <th class="sort" data-sort="allergens">Allergens</th>
                                                         <th class="sort" data-sort="instructions">Special Instructions</th>
                                                         <th class="no-sort">Date Onboarded</th>
@@ -165,6 +192,22 @@
                                                                     });
                                                                     $suite = array_values($suite_number);
 
+                                                                    // Decode dietary preferences for discharged patients
+                                                                    $selected_diets = [];
+                                                                    if (!empty($customer['dietary_preferences'])) {
+                                                                        $selected_diets = is_array(json_decode($customer['dietary_preferences'], true)) 
+                                                                            ? json_decode($customer['dietary_preferences'], true) 
+                                                                            : [];
+                                                                    }
+                                                                    $dietNames = [];
+                                                                    if (!empty($cuisines)) {
+                                                                        foreach ($cuisines as $cuisine) {
+                                                                            if (in_array($cuisine['id'], $selected_diets)) {
+                                                                                $dietNames[] = $cuisine['name'];
+                                                                            }
+                                                                        }
+                                                                    }
+
                                                                     // Decode allergies for discharged patients
                                                                     $selected_allergies = [];
                                                                     if (!empty($customer['allergies'])) {
@@ -184,6 +227,15 @@
                                                                 <td data-sort="<?php echo strtolower($customer['name']); ?>"><?php echo $customer['name']; ?></td>
                                                                 <td data-sort="<?php echo strtolower($floorNameDisplay); ?>"><?php echo $floorNameDisplay; ?></td>
                                                                 <td data-sort="<?php echo strtolower($suite[0]['bed_no'] ?? ''); ?>"><?php echo $suite[0]['bed_no'] ?? ''; ?></td>
+                                                                <td data-sort="<?php echo strtolower(implode(', ', $dietNames)); ?>">
+                                                                    <?php if (!empty($dietNames)): ?>
+                                                                        <span class="badge bg-info">
+                                                                            <?= implode('</span> <span class="badge bg-info">', $dietNames); ?>
+                                                                        </span>
+                                                                    <?php else: ?>
+                                                                        <span class="text-muted">None</span>
+                                                                    <?php endif; ?>
+                                                                </td>
                                                                 <td data-sort="<?php echo strtolower(implode(', ', $allergyNames)); ?>">
                                                                     <?php if (!empty($allergyNames)): ?>
                                                                         <span class="badge bg-secondary">
@@ -348,7 +400,7 @@ $(document).ready(function () {
                 "orderable": false
             }
         ],
-        "order": [[ 6, "desc" ]], // Sort by Date Discharged (column index 6) descending - latest first
+        "order": [[ 7, "desc" ]], // Sort by Date Discharged (column index 7) descending - latest first
         "initComplete": function() {
             $('.dataTables_filter input').attr('placeholder', 'Search clients...');
         }
