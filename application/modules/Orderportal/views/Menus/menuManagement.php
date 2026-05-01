@@ -117,6 +117,7 @@ const EDIT_OPTION_NAME = <?php echo json_encode($edit_option_name ?? ''); ?>;
 const PRESELECT_MENU_ID = <?php echo (int)($preselect_menu_id ?? 0); ?>;
 
 let selectedMenuId = null;
+let originalMenuId = PRESELECT_MENU_ID || null; // Track original menu item for reassignment
 
 // ─── Menu Item dropdown change ──────────────────────────────────
 document.getElementById('menuOptionName').addEventListener('input', function() {
@@ -139,8 +140,12 @@ document.getElementById('menuItemSelect').addEventListener('change', function() 
         document.getElementById('saveAllBottomWrap').style.display = '';
 
         if (PAGE_MODE === 'edit' && EDIT_OPTION_NAME) {
-            // Edit mode: load existing variations for this specific option
-            loadVariations(selectedMenuId, EDIT_OPTION_NAME);
+            // Edit mode: only load variations on initial page load (not on subsequent dropdown changes)
+            if (!this._initialLoadDone) {
+                this._initialLoadDone = true;
+                loadVariations(selectedMenuId, EDIT_OPTION_NAME);
+            }
+            // Otherwise, just update selectedMenuId - variations stay intact for reassignment
         } else {
             // Add mode: show empty form, do NOT fetch existing
             document.getElementById('menuOptionName').value = '';
@@ -480,6 +485,10 @@ function saveAll() {
     formData.append('menu_option_name', topName);
     formData.append('top_description', topDesc);
     formData.append('variations', JSON.stringify(variations));
+    // Send original menu ID if user is reassigning to a different menu item
+    if (originalMenuId && originalMenuId != selectedMenuId) {
+        formData.append('original_menu_detail_id', originalMenuId);
+    }
 
     document.querySelectorAll('button[onclick="saveAll()"]').forEach(b => b.disabled = true);
 
@@ -489,6 +498,8 @@ function saveAll() {
         document.querySelectorAll('button[onclick="saveAll()"]').forEach(b => b.disabled = false);
         if (data.success) {
             showToast(data.message || 'All variations saved!', 'success');
+            // Update originalMenuId after successful reassignment
+            originalMenuId = selectedMenuId;
             if (PAGE_MODE === 'edit' && EDIT_OPTION_NAME) {
                 loadVariations(selectedMenuId, document.getElementById('menuOptionName').value.trim());
             } else {

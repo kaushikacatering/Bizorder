@@ -789,6 +789,7 @@ class Configfoodmenu extends MY_Controller
         }
 
         $menu_detail_id = (int) $this->input->post('menu_detail_id');
+        $original_menu_detail_id = (int) $this->input->post('original_menu_detail_id'); // For reassignment
         $menu_option_name = $this->security->xss_clean(trim($this->input->post('menu_option_name')));
         $top_description = $this->security->xss_clean(trim($this->input->post('top_description')));
         $variations_json = $this->input->post('variations');
@@ -845,6 +846,13 @@ class Configfoodmenu extends MY_Controller
         // AUTO-SYNC: Inject any newly created options into future menu planners
         if (!empty($new_option_ids)) {
             $this->menu_model->syncNewOptionsToFuturePlanners($menu_detail_id, $new_option_ids);
+        }
+
+        // If reassigning from one menu item to another, remove old links
+        if (!empty($original_menu_detail_id) && $original_menu_detail_id != $menu_detail_id) {
+            foreach ($saved_ids as $option_id) {
+                $this->menu_model->remove_menu_option_link($original_menu_detail_id, $option_id);
+            }
         }
 
         echo json_encode(['success' => true, 'message' => 'All options saved successfully.', 'saved_count' => count($saved_ids)]);
