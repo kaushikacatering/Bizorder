@@ -5,8 +5,12 @@
 var selectedMenuOptions = [];
 
 function handleCheckboxChange(checkbox) {
-    console.log('🎯 CHECKBOX CHANGED! ID:', checkbox.dataset.id);
-    
+    // If toggleItem is available (main script loaded), use the optimized path
+    if (typeof toggleItem === 'function') {
+        toggleItem(checkbox);
+        return;
+    }
+    // Fallback for early calls before main script loads
     const id = parseInt(checkbox.dataset.id);
     const name = checkbox.dataset.name;
     const nutrition = checkbox.dataset.nutrition;
@@ -15,22 +19,17 @@ function handleCheckboxChange(checkbox) {
     
     if (checkbox.checked && itemIndex === -1) {
         selectedMenuOptions.push({ id, name, nutrition });
-        console.log('✅ Added:', name);
-        
-        // Hide from available list
         const availableItem = checkbox.closest('.allMenuOptionsList');
         if (availableItem) availableItem.classList.add('hidden');
     } else if (!checkbox.checked && itemIndex !== -1) {
         selectedMenuOptions.splice(itemIndex, 1);
-        console.log('❌ Removed:', name);
-        
-        // Show back in available list
         const availableItem = checkbox.closest('.allMenuOptionsList');
         if (availableItem) availableItem.classList.remove('hidden');
     }
     
-    // Re-render selected items
-    renderSelectedItems();
+    if (typeof renderSelectedItems === 'function') {
+        renderSelectedItems();
+    }
 }
 
 function renderSelectedItems() {
@@ -40,11 +39,11 @@ function renderSelectedItems() {
     selectedItemsContainer.innerHTML = '';
     const selectedCount = document.getElementById('selected-count');
     
-    console.log('📋 Rendering', selectedMenuOptions.length, 'items');
-    
+    const fragment = document.createDocumentFragment();
     selectedMenuOptions.forEach(option => {
         const div = document.createElement('div');
         div.className = 'selected-item-container flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all duration-200 group';
+        div.setAttribute('data-selected-id', option.id);
         div.innerHTML = `
             <div class="ml-1 flex-1">
                 <div class="flex items-center justify-between">
@@ -57,35 +56,18 @@ function renderSelectedItems() {
                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">${option.nutrition}</span>
                 </div>` : ''}
             </div>
-            <button class="ml-2 w-6 h-6 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 transition-all duration-200 remove-btn opacity-70 hover:opacity-100" data-id="${option.id}" title="Remove item">
+            <button type="button" class="ml-2 w-6 h-6 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 transition-all duration-200 remove-btn opacity-70 hover:opacity-100" data-id="${option.id}" title="Remove item">
                 <i class="fa-solid fa-times text-xs"></i>
             </button>
         `;
-        
-        div.querySelector('.remove-btn').addEventListener('click', () => {
-            const removedId = parseInt(div.querySelector('.remove-btn').dataset.id);
-            selectedMenuOptions = selectedMenuOptions.filter(item => item.id != removedId);
-            
-            // Uncheck the corresponding checkbox
-            const checkbox = document.querySelector(`.checkbox-option[data-id="${removedId}"]`);
-            if (checkbox) checkbox.checked = false;
-            
-            // Show the item back in Available Options
-            const availableItem = document.querySelector(`.allMenuOptionsList[data-id="${removedId}"]`);
-            if (availableItem) availableItem.classList.remove('hidden');
-           
-            renderSelectedItems();
-        });
-        
-        selectedItemsContainer.appendChild(div);
+        fragment.appendChild(div);
     });
+    selectedItemsContainer.appendChild(fragment);
     
     if (selectedCount) {
         selectedCount.innerHTML = `<i class="fa-solid fa-check-circle mr-1 text-xs"></i>${selectedMenuOptions.length} items`;
     }
 }
-
-console.log('✅ Handler functions defined');
 </script>
 
 <style>
@@ -630,7 +612,6 @@ label span[style*="color: #ef4444"] {
 
 // INLINE HANDLER - Called directly from HTML onchange
 function handleCheckboxChange(checkbox) {
-    console.log('🎯 CHECKBOX CHANGED! ID:', checkbox.dataset.id, 'Checked:', checkbox.checked);
     toggleItem(checkbox);
 }
 
@@ -638,84 +619,120 @@ function toggleItem(checkbox) {
     const id = parseInt(checkbox.dataset.id);
     const name = checkbox.dataset.name;
     const nutrition = checkbox.dataset.nutrition;
-    console.log('Toggling item:', { id, name, nutrition }, 'Checked:', checkbox.checked);
 
     let itemIndex = selectedMenuOptions.findIndex(item => item.id === id);
     if (checkbox.checked && itemIndex === -1) {
         selectedMenuOptions.push({ id, name, nutrition });
-        console.log('Added to selectedMenuOptions:', selectedMenuOptions);
         
         // Hide from available list
         const availableItem = checkbox.closest('.allMenuOptionsList');
         if (availableItem) {
             availableItem.classList.add('hidden');
         }
+        // Append only the new item (no full re-render)
+        appendSingleSelectedItem({ id, name, nutrition });
     } else if (!checkbox.checked && itemIndex !== -1) {
         selectedMenuOptions.splice(itemIndex, 1);
-        console.log('Removed from selectedMenuOptions:', selectedMenuOptions);
         
         // Show back in available list
         const availableItem = checkbox.closest('.allMenuOptionsList');
         if (availableItem) {
             availableItem.classList.remove('hidden');
         }
+        // Remove only that item from DOM (no full re-render)
+        removeSingleSelectedItem(id);
     }
-    renderSelectedItems();
+    updateSelectedCount();
 }
 
+// Create a single selected-item DOM element
+function createSelectedItemElement(option) {
+    const div = document.createElement('div');
+    div.className = 'selected-item-container flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all duration-200 group';
+    div.setAttribute('data-selected-id', option.id);
+    div.innerHTML = `
+        <div class="ml-1 flex-1">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-0">${option.name}</p>
+                </div>
+            </div>
+            ${option.nutrition && option.nutrition !== '0 Kcal' && option.nutrition.trim() !== '' ? `
+            <div class="flex mt-1">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">${option.nutrition}</span>
+            </div>` : ''}
+        </div>
+        <button type="button" class="ml-2 w-6 h-6 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 transition-all duration-200 remove-btn opacity-70 hover:opacity-100" data-id="${option.id}" title="Remove item">
+            <i class="fa-solid fa-times text-xs"></i>
+        </button>
+    `;
+    return div;
+}
+
+// Append a single item to the selected list (fast - no re-render)
+function appendSingleSelectedItem(option) {
+    const container = document.getElementById('selected-items');
+    if (!container) return;
+    container.appendChild(createSelectedItemElement(option));
+}
+
+// Remove a single item from the selected list DOM (fast - no re-render)
+function removeSingleSelectedItem(id) {
+    const container = document.getElementById('selected-items');
+    if (!container) return;
+    const el = container.querySelector(`[data-selected-id="${id}"]`);
+    if (el) el.remove();
+}
+
+// Update the count badge
+function updateSelectedCount() {
+    const selectedCount = document.getElementById('selected-count');
+    if (selectedCount) {
+        selectedCount.innerHTML = `<i class="fa-solid fa-check-circle mr-1 text-xs"></i>${selectedMenuOptions.length} items`;
+    }
+}
+
+// Full render - only used on initial page load
 function renderSelectedItems() {
     const selectedItemsContainer = document.getElementById('selected-items');
-    selectedItemsContainer.innerHTML = ''; // Clear existing content
-    const selectedCount = document.getElementById('selected-count');
-    const tagCount = document.getElementById('tag-count');
+    if (!selectedItemsContainer) return;
+    selectedItemsContainer.innerHTML = '';
 
-    console.log('Rendering selected items, count:', selectedMenuOptions.length);
+    // Use document fragment for batch DOM insert (much faster)
+    const fragment = document.createDocumentFragment();
     selectedMenuOptions.forEach(option => {
-        const div = document.createElement('div');
-        div.className = 'selected-item-container flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all duration-200 group';
-        div.innerHTML = `
-            <div class="ml-1 flex-1">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-sm font-medium text-gray-700 mb-0">${option.name}</p>
-                    </div>
-                </div>
-                ${option.nutrition && option.nutrition !== '0 Kcal' && option.nutrition.trim() !== '' ? `
-                <div class="flex mt-1">
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">${option.nutrition}</span>
-                </div>` : ''}
-            </div>
-            <button class="ml-2 w-6 h-6 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 transition-all duration-200 remove-btn opacity-70 hover:opacity-100" data-id="${option.id}" title="Remove item">
-                <i class="fa-solid fa-times text-xs"></i>
-            </button>
-        `;
-         
-        div.querySelector('.remove-btn').addEventListener('click', () => {
-            const removedId = parseInt(div.querySelector('.remove-btn').dataset.id);
-            selectedMenuOptions = selectedMenuOptions.filter(item => item.id != removedId);
-            console.log('Removed ID:', removedId, 'New selectedMenuOptions:', selectedMenuOptions);
-            
-            // Uncheck the corresponding checkbox in Available Options
-            const checkbox = document.querySelector(`.checkbox-option[data-id="${removedId}"]`);
-            if (checkbox) {
-                checkbox.checked = false;
-            }
-            
-            // Show the item back in Available Options
-            const availableItem = document.querySelector(`.allMenuOptionsList[data-id="${removedId}"]`);
-            if (availableItem) {
-                availableItem.classList.remove('hidden');
-            }
-           
-            renderSelectedItems();
-        });
-        selectedItemsContainer.appendChild(div);
+        fragment.appendChild(createSelectedItemElement(option));
     });
-
-    selectedCount.innerHTML = `<i class="fa-solid fa-check-circle mr-1 text-xs"></i>${selectedMenuOptions.length} items`;
-    
-    console.log('Selected items rendered, count:', selectedMenuOptions.length);
+    selectedItemsContainer.appendChild(fragment);
+    updateSelectedCount();
 }
+
+// Event delegation for remove buttons (one listener instead of 464+)
+document.addEventListener('click', function(e) {
+    const removeBtn = e.target.closest('.remove-btn');
+    if (!removeBtn) return;
+    // Only handle buttons inside #selected-items
+    if (!removeBtn.closest('#selected-items')) return;
+    
+    const removedId = parseInt(removeBtn.dataset.id);
+    selectedMenuOptions = selectedMenuOptions.filter(item => item.id != removedId);
+    
+    // Uncheck the corresponding checkbox in Available Options
+    const checkbox = document.querySelector(`.checkbox-option[data-id="${removedId}"]`);
+    if (checkbox) {
+        checkbox.checked = false;
+    }
+    
+    // Show the item back in Available Options
+    const availableItem = document.querySelector(`.allMenuOptionsList[data-id="${removedId}"]`);
+    if (availableItem) {
+        availableItem.classList.remove('hidden');
+    }
+    
+    // Remove just this element from DOM
+    removeSingleSelectedItem(removedId);
+    updateSelectedCount();
+});
 
 // Search filter
 document.getElementById('menu-search').addEventListener('input', function(e) {
@@ -746,7 +763,6 @@ document.getElementById('add-selected').addEventListener('click', function() {
             const name = checkbox.dataset.name;
             const nutrition = checkbox.dataset.nutrition;
             selectedMenuOptions.push({ id, name, nutrition });
-            console.log('Added via add button:', { id, name, nutrition }, 'New selectedMenuOptions:', selectedMenuOptions);
         }
     });
     renderSelectedItems();
@@ -763,7 +779,6 @@ document.getElementById('remove-selected').addEventListener('click', function() 
     allItems.forEach(item => item.classList.remove('hidden'));
     
     renderSelectedItems();
-    console.log('Cleared all selectedMenuOptions:', selectedMenuOptions);
 });
 
 // Warning Modal Functions
@@ -832,13 +847,11 @@ document.getElementById('menu-form').addEventListener('submit', function(e) {
     }
     
     console.log('✅ Validation passed, proceeding with submission');
-    console.log('📦 Selected options to save:', selectedMenuOptions);
     
     const loader = document.getElementById('loader');
     loader.classList.remove('hidden');
 
-    // Remove existing hidden inputs
-    // this.querySelectorAll('input[name^="menu_options["]').forEach(el => el.remove());
+    // Remove existing hidden inputs (both plain name="menu_options" and indexed name="menu_options[N]")
     this.querySelectorAll('input[name="menu_options"], input[name^="menu_options["]').forEach(el => el.remove());
 
     // Add new hidden inputs for selected IDs
@@ -848,11 +861,7 @@ document.getElementById('menu-form').addEventListener('submit', function(e) {
         input.name = `menu_options[${index}]`;
         input.value = option.id;
         this.appendChild(input);
-        console.log(`➕ Added hidden input: menu_options[${index}] = ${option.id} (${option.name})`);
     });
-
-    console.log('📝 Form data prepared, submitting...');
-    console.log('🔢 Total hidden inputs created:', selectedMenuOptions.length);
 
     // Try immediate submission first, then fallback to setTimeout
     try {
@@ -896,13 +905,9 @@ document.getElementById('form-cancel-btn').addEventListener('click', () => {
     window.location.href = '<?php echo site_url('Orderportal/Configfoodmenu/menus'); ?>';
 });
 document.getElementById('save-btn').addEventListener('click', () => {
-    console.log('💾 Save button clicked');
-    console.log('📋 Current selectedMenuOptions:', selectedMenuOptions);
     document.getElementById('menu-form').dispatchEvent(new Event('submit'));
 });
 document.getElementById('form-save-btn').addEventListener('click', () => {
-    console.log('💾 Form save button clicked');
-    console.log('📋 Current selectedMenuOptions:', selectedMenuOptions);
     document.getElementById('menu-form').dispatchEvent(new Event('submit'));
 });
 
