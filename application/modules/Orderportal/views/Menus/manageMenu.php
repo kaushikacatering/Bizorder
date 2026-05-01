@@ -838,7 +838,8 @@ document.getElementById('menu-form').addEventListener('submit', function(e) {
     loader.classList.remove('hidden');
 
     // Remove existing hidden inputs
-    this.querySelectorAll('input[name^="menu_options["]').forEach(el => el.remove());
+    // this.querySelectorAll('input[name^="menu_options["]').forEach(el => el.remove());
+    this.querySelectorAll('input[name="menu_options"], input[name^="menu_options["]').forEach(el => el.remove());
 
     // Add new hidden inputs for selected IDs
     selectedMenuOptions.forEach((option, index) => {
